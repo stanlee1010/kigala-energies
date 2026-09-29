@@ -1,0 +1,134 @@
+/* ==========================================================================
+   Dashboards: KPI tiles, warnings, banners, stock gauges, charts, checklist
+   ========================================================================== */
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .85rem; }
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .9rem 1rem;
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.kpi__label { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.kpi__value { font-size: 1.45rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: .2rem; overflow-wrap: anywhere; }
+.kpi__sub { font-size: .8rem; color: var(--muted); }
+.kpi--profit .kpi__value { color: var(--ok); }
+.kpi--loss .kpi__value { color: var(--danger); }
+
+.section-title { font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 1.5rem 0 .6rem; font-weight: 700; }
+
+/* ------------------------------------------------------------- banners */
+
+.banner {
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+  border: 2px solid;
+  display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap;
+}
+.banner__icon { font-size: 1.8rem; line-height: 1; }
+.banner__body { flex: 1; min-width: 220px; }
+.banner__body h2 { margin-bottom: .25rem; font-size: 1.1rem; letter-spacing: .02em; }
+.banner__body p { margin: 0; }
+.banner--danger { background: var(--danger-soft); border-color: #ef4444; }
+.banner--warn { background: var(--warn-soft); border-color: var(--accent); }
+.banner--info { background: var(--info-soft); border-color: #3b82f6; }
+.banner--ok { background: var(--ok-soft); border-color: #22c55e; }
+
+.pl-table { width: 100%; max-width: 480px; font-variant-numeric: tabular-nums; border-collapse: collapse; margin: .5rem 0; }
+.pl-table td { padding: .3rem 0; }
+.pl-table td:last-child { text-align: right; font-weight: 700; }
+.pl-table tr.total td { border-top: 2px solid currentColor; font-size: 1.1rem; padding-top: .5rem; }
+
+/* ------------------------------------------------------------ warnings */
+
+.alert-list { display: flex; flex-direction: column; gap: .6rem; }
+.alert-item {
+  display: flex; gap: .8rem; align-items: flex-start;
+  padding: .8rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent);
+  background: var(--surface);
+}
+.alert-item--CRITICAL { border-left-color: #dc2626; background: var(--danger-soft); }
+.alert-item--INFO { border-left-color: #3b82f6; }
+.alert-item__icon { font-size: 1.3rem; line-height: 1.2; }
+.alert-item__body { flex: 1; min-width: 0; }
+.alert-item__title { font-weight: 800; letter-spacing: .01em; }
+.alert-item__msg { font-size: .9rem; }
+.alert-item__meta { font-size: .78rem; color: var(--muted); margin-top: .2rem; }
+
+/* ---------------------------------------------------------- stock gauges */
+
+.stock-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .85rem; }
+.gauge { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow); }
+.gauge__head { display: flex; justify-content: space-between; align-items: baseline; }
+.gauge__value { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.gauge__bar { height: 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin: .6rem 0 .3rem; }
+.gauge__fill { height: 100%; border-radius: 999px; background: var(--brand); transition: width .4s ease; }
+.gauge--low { border-color: #ef4444; }
+.gauge--low .gauge__value { color: var(--danger); }
+
+/* --------------------------------------------------------------- charts */
+
+.chart-box { position: relative; height: 280px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1rem; }
+@media (max-width: 520px) {
+  .chart-grid { grid-template-columns: 1fr; }
+  .chart-box { height: 230px; }
+}
+
+/* ------------------------------------------------------------- checklist */
+
+.checklist { list-style: none; padding: 0; margin: 0; display: grid; gap: .4rem; }
+.checklist li { display: flex; gap: .6rem; align-items: center; }
+.checklist .tick { width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: .8rem; background: var(--surface-2); border: 1px solid var(--border); flex: none; }
+.checklist li.done .tick { background: #16a34a; color: #fff; border-color: #16a34a; }
+.checklist li.done { color: var(--muted); }
+
+/* -------------------------------------------------------- training guide */
+
+.guide-head { background: linear-gradient(135deg, var(--brand), #134e4a); color: #fff; padding: 1.25rem 1rem; }
+.guide-head__inner { max-width: 900px; margin: 0 auto; display: flex; gap: 1rem; align-items: center; }
+.guide-head h1 { margin: 0; }
+.guide-head p { margin: .25rem 0 0; opacity: .9; }
+.guide { max-width: 900px; margin: 0 auto; }
+.guide .tabs { margin-bottom: 0; border-bottom: 0; }
+.lesson__head { display: flex; align-items: center; gap: .75rem; }
+.lesson__head h2 { flex: 1; margin: 0; }
+.lesson__num {
+  width: 2rem; height: 2rem; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-weight: 800;
+  background: var(--brand-soft); color: var(--brand);
+}
+.lesson ol { padding-left: 1.25rem; margin: .5rem 0; }
+.lesson ol li + li { margin-top: .3rem; }
+.lesson__expect { background: var(--surface-2); border-left: 4px solid var(--brand); padding: .5rem .75rem; border-radius: 4px; }
+.lesson--done { opacity: .75; }
+.lesson--done .lesson__num { background: #16a34a; color: #fff; }
+@media print {
+  .guide-head { background: none; color: #000; }
+  .lesson { break-inside: avoid; }
+}
+
+/* ---------------------------------------------------- staff shift header */
+
+.shift-hero {
+  background: linear-gradient(135deg, var(--brand), #134e4a);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  box-shadow: var(--shadow);
+}
+.shift-hero h1 { margin: 0; font-size: 1.6rem; }
+.shift-hero .meta { display: flex; flex-wrap: wrap; gap: .4rem 1.5rem; margin-top: .5rem; opacity: .95; }
+.shift-hero .money { margin-top: 1rem; background: rgba(255, 255, 255, .12); border-radius: var(--radius-sm); padding: .8rem 1rem; }
+.shift-hero .money span { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+.shift-hero .money strong { display: block; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; }
+.step { display: flex; gap: .5rem; align-items: center; padding: .6rem .8rem; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); font-weight: 600; font-size: .9rem; }
+.step.done { background: var(--ok-soft); border-color: transparent; color: var(--ok); }

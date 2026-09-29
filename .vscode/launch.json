@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run station system (debug, http://127.0.0.1:5000)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "backend.app",
+      "cwd": "${workspaceFolder}/petrol_station",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": { "FLASK_DEBUG": "0", "PORT": "5000" },
+      "justMyCode": true
+    },
+    {
+      "name": "Run station system (production server, LAN :8000)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/petrol_station/serve.py",
+      "cwd": "${workspaceFolder}/petrol_station",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe"
+    },
+    {
+      "name": "Run tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q", "tests", "-p", "no:cacheprovider"],
+      "cwd": "${workspaceFolder}/petrol_station",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe"
+    }
+  ]
+}

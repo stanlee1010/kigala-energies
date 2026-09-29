@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Manager Dashboard</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/forms.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+  <div class="shell" id="shell">
+    <div class="main">
+      <main class="content">
+        <div id="banners"></div>
+        <div id="setup"></div>
+
+        <div class="page-head">
+          <div><h1>Today</h1><p id="today-label"></p></div>
+          <div class="row">
+            <a class="btn" href="/manager/shifts.html" id="current-shift-link">Current shift</a>
+            <a class="btn btn--primary" href="/manager/reports.html">Reports</a>
+          </div>
+        </div>
+        <section class="kpis" id="today-kpis"><div class="loading">Loading…</div></section>
+
+        <div class="grid-2" style="margin-top:1rem">
+          <section class="card">
+            <div class="card__head"><h2>⚠️ Warnings</h2><a href="/manager/alerts.html" class="btn btn--sm">View all</a></div>
+            <div id="warnings" class="alert-list"></div>
+          </section>
+          <section class="stack">
+            <div class="card">
+              <div class="card__head"><h2>Waiting for you</h2></div>
+              <div id="pending" class="grid-3"></div>
+            </div>
+            <div class="card">
+              <div class="card__head"><h2>Money per shift</h2>
+                <div class="row"><input class="input input--sm" type="date" id="money-date" aria-label="Day">
+                <a class="btn btn--sm" href="/manager/reports.html?type=daily_money">Report</a></div></div>
+              <div id="money-today"></div>
+            </div>
+            <div class="card">
+              <div class="card__head"><h2>This reporting period</h2><span class="muted small" id="period-label"></span></div>
+              <div id="period-pl"></div>
+            </div>
+          </section>
+        </div>
+
+        <h2 class="section-title">Fuel in the tanks</h2>
+        <section id="stock" class="stock-grid"></section>
+
+        <h2 class="section-title">Performance</h2>
+        <div class="tabs" id="chart-tabs" role="tablist">
+          <button class="tab active" data-g="daily">Daily</button>
+          <button class="tab" data-g="weekly">Weekly</button>
+          <button class="tab" data-g="monthly">Monthly</button>
+          <button class="tab" data-g="yearly">Yearly</button>
+        </div>
+        <section class="chart-grid">
+          <div class="card"><h3>Revenue</h3><div class="chart-box"><canvas id="chart-revenue" aria-label="Revenue chart"></canvas></div></div>
+          <div class="card"><h3>Fuel sold (litres)</h3><div class="chart-box"><canvas id="chart-fuel" aria-label="Fuel sold chart"></canvas></div></div>
+          <div class="card"><h3>Operating expenses</h3><div class="chart-box"><canvas id="chart-expenses" aria-label="Expenses chart"></canvas></div></div>
+          <div class="card"><h3>Profit / loss</h3><div class="chart-box"><canvas id="chart-profit" aria-label="Profit and loss chart"></canvas></div></div>
+        </section>
+        <details class="card" style="margin-top:1rem">
+          <summary><strong>Show chart data as a table</strong></summary>
+          <div id="chart-table" style="margin-top:.75rem"></div>
+        </details>
+      </main>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/validation.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

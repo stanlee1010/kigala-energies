@@ -1,0 +1,551 @@
+/* ==========================================================================
+   Kigala Energies — shared frontend core
+   API client, formatting, page shell (sidebar/topbar), server-synced clock,
+   toasts, modals, tables and the first-Wednesday price review prompt.
+   Business date/time always comes from the server; the browser clock is
+   only used to tick the display between syncs.
+   ========================================================================== */
+(function () {
+  "use strict";
+
+  const App = (window.App = {});
+  App.user = null;
+  App.station = null;
+  App.settings = { currency: "TZS", timezone: "Africa/Dar_es_Salaam" };
+
+  /* ------------------------------------------------------------ DOM utils */
+
+  const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  App.esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
+  App.$ = (sel, root = document) => root.querySelector(sel);
+  App.$$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  App.h = (html) => {
+    const t = document.createElement("template");
+    t.innerHTML = html.trim();
+    return t.content.firstElementChild;
+  };
+  App.on = (root, event, selector, handler) => {
+    root.addEventListener(event, (e) => {
+      const target = e.target.closest(selector);
+      if (target && root.contains(target)) handler(e, target);
+    });
+  };
+
+  /* ------------------------------------------------------------------ API */
+
+  App.api = async function (method, url, data, opts = {}) {
+    const init = { method, headers: { Accept: "application/json" }, credentials: "same-origin" };
+    if (data instanceof FormData) init.body = data;
+    else if (data !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(data);
+    }
+    const res = await fetch(url, init);
+    let payload = null;
+    try { payload = await res.json(); } catch (e) { /* non-JSON */ }
+    if (res.status === 401 && !opts.allow401) {
+      location.href = "/login.html?next=" + encodeURIComponent(location.pathname + location.search);
+      throw new Error("Please log in");
+    }
+    if (!res.ok) {
+      const err = new Error((payload && payload.error) || `Request failed (${res.status})`);
+      err.title = payload && payload.title;
+      err.details = payload && payload.details;
+      err.status = res.status;
+      throw err;
+    }
+    return payload;
+  };
+  App.get = (url) => App.api("GET", url);
+  App.post = (url, data = {}) => App.api("POST", url, data);
+  App.put = (url, data = {}) => App.api("PUT", url, data);
+  App.del = (url) => App.api("DELETE", url);
+
+  App.qs = (params) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") q.set(k, v); });
+    const s = q.toString();
+    return s ? "?" + s : "";
+  };
+
+  /* ----------------------------------------------------------- formatting */
+
+  const nf = (min, max) => new Intl.NumberFormat("en-US", { minimumFractionDigits: min, maximumFractionDigits: max });
+  const NF0 = nf(0, 0), NF2 = nf(0, 2), NF3 = nf(0, 3);
+
+  App.num = (v, digits = 2) => (v === null || v === undefined || v === "" ? "—" : (digits === 0 ? NF0 : digits === 3 ? NF3 : NF2).format(Number(v)));
+  App.money = (v, withCurrency = true) => {
+    if (v === null || v === undefined || v === "") return "—";
+    // Whole shillings for large amounts keeps figures readable; small amounts (prices) keep cents.
+    const n = Number(v);
+    const s = (Math.abs(n) >= 1000 ? NF0 : NF2).format(n);
+    return withCurrency ? `${App.settings.currency} ${s}` : s;
+  };
+  App.litres = (v) => (v === null || v === undefined || v === "" ? "—" : `${NF2.format(Number(v))} L`);
+  App.date = (v) => {
+    if (!v) return "—";
+    const [y, m, d] = String(v).slice(0, 10).split("-");
+    return `${d}/${m}/${y}`;
+  };
+  /** Station-local naive ISO string, e.g. 2026-09-28T06:00:00 */
+  App.localDateTime = (v) => (v ? `${App.date(v)} ${String(v).slice(11, 16)}` : "—");
+  /** UTC ISO string from the server -> station wall-clock time */
+  App.datetime = (v) => {
+    if (!v) return "—";
+    const d = new Date(v.endsWith("Z") ? v : v + "Z");
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: App.settings.timezone, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    }).format(d).replace(",", "");
+  };
+  App.label = (s) => String(s || "").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+  App.badge = (status, text) => `<span class="badge badge--${App.esc(status)}">${App.esc(text || App.label(status))}</span>`;
+  App.fuelDot = (color) => `<span class="fuel-dot" style="background:${App.esc(color || "#64748b")}"></span>`;
+  App.signed = (v, fmt = App.num) => (Number(v) > 0 ? "+" : "") + fmt(v);
+
+  /* ------------------------------------------------------- toast & modal */
+
+  App.toast = function (message, type = "info", ms = 4500) {
+    let box = App.$(".toasts");
+    if (!box) { box = App.h('<div class="toasts" role="status" aria-live="polite"></div>'); document.body.appendChild(box); }
+    const el = App.h(`<div class="toast toast--${type}">${App.esc(message)}</div>`);
+    box.appendChild(el);
+    setTimeout(() => el.remove(), ms);
+  };
+  App.error = (err) => {
+    // Business warnings with a title (e.g. TANK CAPACITY EXCEEDED) get a clear pop-up, others a toast.
+    if (err && err.title) {
+      App.modal({ title: `⚠️ ${App.esc(err.title)}`, body: `<p>${App.esc(err.message)}</p>`,
+                  actions: [{ label: "OK", cls: "btn--primary" }] });
+    } else {
+      App.toast(err && err.message ? err.message : String(err), "error", 7000);
+    }
+  };
+
+  /**
+   * App.modal({ title, body, wide, dismissible, actions: [{ label, cls, onClick(close, modalEl) }] })
+   * onClick may return false (or a Promise resolving to false) to keep the modal open.
+   */
+  App.modal = function ({ title, body, wide = false, dismissible = true, actions = [] }) {
+    const layer = App.h(`
+      <div class="modal-layer" role="dialog" aria-modal="true">
+        <div class="modal ${wide ? "modal--wide" : ""}">
+          <div class="modal__head"><h2>${title}</h2>${dismissible ? '<button class="modal__close" aria-label="Close">&times;</button>' : ""}</div>
+          <div class="modal__body"></div>
+          ${actions.length ? '<div class="modal__foot"></div>' : ""}
+        </div>
+      </div>`);
+    const bodyEl = App.$(".modal__body", layer);
+    if (typeof body === "string") bodyEl.innerHTML = body; else if (body) bodyEl.appendChild(body);
+    const close = () => { layer.remove(); document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => { if (e.key === "Escape" && dismissible) close(); };
+    document.addEventListener("keydown", onKey);
+    if (dismissible) {
+      App.$(".modal__close", layer).addEventListener("click", close);
+      layer.addEventListener("mousedown", (e) => { if (e.target === layer) close(); });
+    }
+    const foot = App.$(".modal__foot", layer);
+    actions.forEach((a) => {
+      const btn = App.h(`<button type="button" class="btn ${a.cls || ""}">${a.label}</button>`);
+      btn.addEventListener("click", async () => {
+        if (!a.onClick) return close();
+        btn.disabled = true;
+        try {
+          const keep = await a.onClick(close, layer);
+          if (keep !== false) close();
+        } catch (err) { App.error(err); } finally { btn.disabled = false; }
+      });
+      foot.appendChild(btn);
+    });
+    document.body.appendChild(layer);
+    const first = App.$("input, select, textarea", bodyEl);
+    if (first) setTimeout(() => first.focus(), 30);
+    return { close, el: layer };
+  };
+
+  /** Ask for confirmation, optionally with a required text input (e.g. reason). Resolves value/true or false. */
+  App.ask = function ({ title, message = "", confirmLabel = "Confirm", danger = false, input = null }) {
+    return new Promise((resolve) => {
+      const body = `<p>${message}</p>${input ? `
+        <div class="field"><label for="ask-input">${App.esc(input.label)}</label>
+        <textarea id="ask-input" class="input" ${input.required ? "required" : ""}>${App.esc(input.value || "")}</textarea></div>` : ""}`;
+      let done = false;
+      const m = App.modal({
+        title, body,
+        actions: [
+          { label: "Cancel", onClick: () => { done = true; resolve(false); } },
+          {
+            label: confirmLabel, cls: danger ? "btn--danger" : "btn--primary",
+            onClick: (close, el) => {
+              const val = input ? App.$("#ask-input", el).value.trim() : true;
+              if (input && input.required && !val) { App.toast(`${input.label} is required`, "error"); return false; }
+              done = true; resolve(val);
+            },
+          },
+        ],
+      });
+      const obs = new MutationObserver(() => { if (!document.body.contains(m.el)) { obs.disconnect(); if (!done) resolve(false); } });
+      obs.observe(document.body, { childList: true });
+    });
+  };
+
+  /** One tank's movement in a shift: Opening + Refills − (each pump = total sold) = expected balance. */
+  App.tankCard = (t) => `
+    <div class="reading-card" style="border-left-color:${App.esc(t.color)}">
+      <strong>${App.fuelDot(t.color)}${App.esc(t.tank)}</strong>
+      <span class="small muted"> · capacity ${App.litres(t.capacity)}</span>
+      <table class="pl-table">
+        <tr><td>Opening stock</td><td>${App.litres(t.opening)}</td></tr>
+        <tr><td>+ Refilled into the tank</td><td>${App.litres(t.refilled)}</td></tr>
+        ${t.pumps.map((p) => `<tr class="small"><td>&nbsp;&nbsp;${App.esc(p.pump)} dispensed</td><td>${App.litres(p.sold)}</td></tr>`).join("")}
+        <tr><td>− Total sold (all pumps on this tank)</td><td>${App.litres(t.sold)}</td></tr>
+        ${Number(t.adjustments) ? `<tr><td>± Adjustments</td><td>${App.signed(t.adjustments, App.litres)}</td></tr>` : ""}
+        <tr class="total ${t.over_capacity || t.below_zero ? "text-danger" : ""}"><td>= Expected tank balance</td><td>${App.litres(t.closing)}</td></tr>
+      </table>
+      ${t.over_capacity ? '<p class="small text-danger"><strong>⚠️ More than the tank can hold — check the refills and readings.</strong></p>' : ""}
+      ${t.below_zero ? '<p class="small text-danger"><strong>⚠️ Below zero — record the tank’s opening balance or check for a missing refill.</strong></p>' : ""}
+    </div>`;
+
+  /**
+   * MANAGER: money for a day — Morning (opening shift) first, any added shift, then Night.
+   * Each shift's cash uses only its OWN online money; the last row is the total for all shifts.
+   */
+  App.dayMoneyHtml = (d) => `
+    ${App.table({
+      columns: [
+        { key: "name", label: "Shift", render: (s) => `${App.esc(s.name)} <span class="small muted">${App.label(s.status)}</span>` },
+        { key: "total", label: "Total (sales)", cls: "num", render: (s) => App.money(s.total) },
+        { key: "online", label: "− Its online", cls: "num", render: (s) => App.money(s.online) },
+        { key: "total_cash", label: "= Total cash", cls: "num", render: (s) => `<strong>${App.money(s.total_cash)}</strong>` },
+      ],
+      rows: d.shifts, cards: false, empty: "No shifts for this day yet.",
+      footer: [{ html: "All shifts" }, { cls: "num", html: App.money(d.total) }, { cls: "num", html: App.money(d.online_total) },
+               { cls: "num", html: App.money(d.total_cash) }],
+    })}
+    <table class="pl-table" style="margin-top:.5rem">
+      <tr><td>Total money obtained (all shifts)</td><td>${App.money(d.total)}</td></tr>
+      <tr><td>Total money online per day</td><td>${App.money(d.online_total)}</td></tr>
+      <tr><td>Total cash of the day</td><td>${App.money(d.total_cash)}</td></tr>
+      <tr><td>− Expenses of the day</td><td>${App.money(d.expenses)}</td></tr>
+      <tr class="total ${Number(d.balance) < 0 ? "text-danger" : "text-ok"}"><td>= Balance of the day</td><td>${App.money(d.balance)}</td></tr>
+    </table>
+    <p class="small muted">The Morning shift opens the day. Each shift's cash = its own sales − its own online money.</p>`;
+
+  /**
+   * Expense form. The category is typed in the person's own words, with the existing
+   * categories suggested as they type (a new word becomes a new category).
+   * options: { date: true to show a date field, max: latest allowed date, reason: true to ask why }
+   */
+  let expenseFormSeq = 0;
+  App.expenseForm = function (e, categories, options = {}) {
+    const id = `cat-list-${++expenseFormSeq}`;
+    const form = App.h(`<form novalidate><div class="form-grid">
+      <div class="field"><label>Category</label>
+        <input class="input" name="category_name" list="${id}" autocomplete="off" required
+               placeholder="Type or pick, e.g. Cleaning" value="${App.esc(e ? e.category : "")}">
+        <datalist id="${id}">${categories.filter((c) => c.is_active).map((c) => `<option value="${App.esc(c.name)}">`).join("")}</datalist>
+        <span class="hint">Pick a suggestion or write your own words.</span></div>
+      <div class="field"><label>Amount</label><input class="input input--big" type="number" inputmode="decimal" min="0" step="0.01" name="amount" value="${e ? Number(e.amount) : ""}" data-positive required></div>
+      ${options.date ? `<div class="field"><label>Date</label><input class="input" type="date" name="expense_date" value="${e ? e.expense_date : App.serverToday()}" max="${options.max || App.serverToday()}" required></div>` : ""}
+      <div class="field"><label>Reference</label><input class="input" name="reference" value="${App.esc(e ? e.reference || "" : "")}"></div>
+      <div class="field span-all"><label>What was it for? (your own words)</label><input class="input" name="description" value="${App.esc(e ? e.description : "")}" required></div>
+      <div class="field span-all"><label>Receipt photo (optional)</label><input class="input" type="file" name="receipt" accept="image/*,application/pdf" capture="environment"></div>
+      ${options.reason ? '<div class="field span-all"><label>Reason for change</label><input class="input" name="reason" required></div>' : ""}
+    </div></form>`);
+    return form;
+  };
+
+  /** Read an expense form, uploading the receipt first if one was chosen. */
+  App.expenseData = async function (form) {
+    const data = App.formData(form);
+    delete data.receipt;
+    const file = App.$('[name="receipt"]', form).files[0];
+    if (file) {
+      const fd = new FormData();
+      fd.append("file", file);
+      data.receipt_attachment_id = (await App.api("POST", "/api/attachments", fd)).attachment.id;
+    }
+    return data;
+  };
+
+  /** Collect named form fields into a plain object. */
+  App.formData = function (form) {
+    const data = {};
+    App.$$("[name]", form).forEach((el) => {
+      if (el.type === "checkbox") data[el.name] = el.checked;
+      else if (el.type === "radio") { if (el.checked) data[el.name] = el.value; }
+      else if (el.multiple) data[el.name] = Array.from(el.selectedOptions).map((o) => o.value);
+      else data[el.name] = el.value.trim();
+    });
+    return data;
+  };
+
+  /** Render a table. columns: [{ key, label, cls, render(row) }] */
+  App.table = function ({ columns, rows, empty = "No records found.", footer = null, cards = true }) {
+    if (!rows || !rows.length) return `<div class="empty">${App.esc(empty)}</div>`;
+    const head = columns.map((c) => `<th class="${c.cls || ""}">${App.esc(c.label)}</th>`).join("");
+    const body = rows.map((row) => `<tr>${columns.map((c) => {
+      const val = c.render ? c.render(row) : App.esc(row[c.key] ?? "—");
+      return `<td class="${c.cls || ""}" data-label="${App.esc(c.label)}">${val}</td>`;
+    }).join("")}</tr>`).join("");
+    const foot = footer ? `<tfoot><tr>${footer.map((f) => `<td class="${f.cls || ""}">${f.html ?? ""}</td>`).join("")}</tr></tfoot>` : "";
+    return `<div class="table-wrap"><table class="table ${cards ? "table--cards" : ""}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
+  };
+
+  App.options = (items, valueKey, labelKey, selected, placeholder) =>
+    (placeholder ? `<option value="">${App.esc(placeholder)}</option>` : "") +
+    items.map((i) => `<option value="${App.esc(i[valueKey])}" ${String(i[valueKey]) === String(selected) ? "selected" : ""}>${App.esc(typeof labelKey === "function" ? labelKey(i) : i[labelKey])}</option>`).join("");
+
+  App.download = function (url) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  /* ---------------------------------------------------------- page shell */
+
+  const NAV = {
+    MANAGER: [
+      ["/dashboard.html", "📊", "Dashboard"],
+      ["/manager/alerts.html", "⚠️", "Warnings", "alerts"],
+      ["/manager/shifts.html", "🕒", "Shifts"],
+      ["/manager/staff.html", "👥", "Staff"],
+      ["/manager/pumps.html", "⛽", "Pumps"],
+      ["/manager/prices.html", "🏷️", "Fuel Prices"],
+      ["/manager/capital.html", "💰", "Capital"],
+      ["/manager/stock.html", "🛢️", "Tanks & Stock"],
+      ["/manager/refills.html", "🚚", "Refills"],
+      ["/manager/expenses.html", "🧾", "Expenses"],
+      ["/manager/reports.html", "📑", "Reports"],
+      ["/manager/audit.html", "🔍", "Audit Log"],
+      ["/manager/settings.html", "⚙️", "Settings"],
+    ],
+    DIRECTOR: [
+      ["/director/index.html", "📊", "Sales & Profit"],
+      ["/director/managers.html", "🧑‍💼", "Managers"],
+      ["/director/stations.html", "📍", "Stations"],
+    ],
+    STAFF: [
+      ["/staff/index.html", "🕒", "My Shift"],
+      ["/staff/refill.html", "🚚", "Fuel Refill"],
+      ["/staff/records.html?tab=expenses", "💸", "Expenses"],
+      ["/staff/records.html", "🧾", "My Records"],
+    ],
+  };
+
+  App.home = (user) => (!user ? "/login.html"
+    : user.role === "DIRECTOR" ? "/director/index.html"
+    : user.role === "MANAGER" ? "/dashboard.html" : "/staff/index.html");
+
+  function renderShell(title) {
+    const shell = App.$("#shell");
+    const main = App.$(".main", shell);
+    const path = location.pathname.replace(/\/$/, "/index.html");
+    const items = NAV[App.user.role] || [];
+    // Managers who run several locations choose the station they are working on.
+    const stations = App.user.stations || [];
+    const switcher = App.user.role === "MANAGER" && stations.length > 1
+      ? `<label class="station-switch">📍 <select id="station-switch" class="input input--sm" aria-label="Station">
+           ${App.options(stations, "id", "name", App.user.station_id)}</select></label>` : "";
+    const nav = items.map(([href, icon, label, counter]) => `
+      <li><a href="${href}" class="${path + location.search === href || (path === href && !location.search) ? "active" : ""}">
+        <span class="nav__icon">${icon}</span>${label}${counter ? `<span class="nav__count hidden" data-counter="${counter}"></span>` : ""}
+      </a></li>`).join("");
+    shell.insertBefore(App.h(`
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="sidebar__brand"><div class="sidebar__logo">⛽</div>
+          <div>${App.user.role === "DIRECTOR" ? "All locations" : App.esc(App.station.name)}
+            <div class="sidebar__station">${App.user.role === "DIRECTOR" ? "Director portal" : "Petrol Station Management"}</div></div></div>
+        <ul class="nav">${nav}
+          <li><a href="/change-password.html"><span class="nav__icon">🔑</span>Change password</a></li>
+          ${App.user.role === "STAFF" ? '<li><a href="/training.html" target="_blank" rel="noopener"><span class="nav__icon">📘</span>Training guide</a></li>' : ""}
+        </ul>
+        <div class="sidebar__user"><strong>${App.esc(App.user.full_name)}</strong>
+          ${App.esc(App.user.username)} · ${App.label(App.user.role)}
+          <div><button class="btn btn--sm btn--ghost" id="logout-btn">Log out</button></div>
+        </div>
+      </aside>`), main);
+    shell.insertBefore(App.h('<div class="backdrop"></div>'), main);
+    main.insertBefore(App.h(`
+      <header class="topbar">
+        <button class="menu-toggle" aria-label="Open menu">☰</button>
+        <div class="topbar__title">${App.esc(title)}</div>
+        ${switcher}
+        <div class="topbar__clock"><strong id="clock-time">--:--:--</strong><span id="clock-date"></span></div>
+      </header>`), main.firstChild);
+    document.title = `${title} · ${App.user.role === "DIRECTOR" ? "Director" : App.station.name}`;
+    const pick = App.$("#station-switch");
+    if (pick) pick.addEventListener("change", () => App.run(async () => {
+      await App.post("/api/auth/station", { station_id: Number(pick.value) });
+      location.reload();   // everything on the page now belongs to the chosen station
+    }));
+
+    App.$(".menu-toggle").addEventListener("click", () => shell.classList.add("nav-open"));
+    App.$(".backdrop").addEventListener("click", () => shell.classList.remove("nav-open"));
+    App.$("#logout-btn").addEventListener("click", async () => {
+      await App.post("/api/auth/logout").catch(() => null);
+      location.href = "/login.html";
+    });
+  }
+
+  /* ------------------------------------------------ training portal banner */
+
+  function renderTrainingBanner() {
+    const banner = App.h(`
+      <div class="training-banner" role="note">
+        <strong>🎓 TRAINING PORTAL</strong>
+        <span>Practice data only — nothing you do here affects the real station. The clock is paused so your practice shift never runs out.</span>
+        <span class="spacer"></span>
+        <a class="btn btn--sm" href="/training.html" target="_blank" rel="noopener">📘 Training guide</a>
+        <button class="btn btn--sm" data-demo="reset">↺ Reset training data</button>
+      </div>`);
+    const topbar = App.$(".topbar");
+    topbar.parentNode.insertBefore(banner, topbar.nextSibling);
+    App.on(banner, "click", "[data-demo]", () => App.run(async () => {
+      if (!(await App.ask({ title: "Reset training data?", confirmLabel: "Reset",
+        message: "All practice changes are wiped and fresh practice data is created. Everyone on the training portal will need to log in again." }))) return;
+      await App.post("/api/demo/reset");
+      location.href = "/login.html";
+    }));
+  }
+
+  /* ----------------------------------------------- server-synchronised clock */
+
+  let clockOffset = 0;  // server wall clock (as UTC ms) minus browser ms
+  let pausedAt = null;  // training portal: the business clock does not move
+  App.serverNow = () => new Date(pausedAt ?? Date.now() + clockOffset); // read with timeZone "UTC"
+  App.serverToday = () => App.serverNow().toISOString().slice(0, 10);
+
+  async function syncClock() {
+    try {
+      const t = await App.get("/api/time");
+      clockOffset = Date.parse(t.now + "Z") - Date.now();
+      pausedAt = t.paused ? Date.parse(t.now + "Z") : null;
+      App.currentShiftLabel = t.current_shift;
+      const el = App.$("#clock-date");
+      if (el) el.dataset.shift = t.current_shift;
+    } catch (e) { /* keep ticking with the previous offset */ }
+  }
+
+  function tick() {
+    const now = App.serverNow();
+    const t = App.$("#clock-time"), d = App.$("#clock-date");
+    if (!t) return;
+    t.textContent = pausedAt !== null ? `⏸ ${now.toISOString().slice(11, 16)} training time` : now.toISOString().slice(11, 19);
+    const day = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(now);
+    d.textContent = `${day}${d.dataset.shift ? " · " + d.dataset.shift : ""}`;
+  }
+
+  /* ----------------------------------------------------- warnings counter */
+
+  App.refreshAlertCount = async function () {
+    if (!App.user || App.user.role !== "MANAGER") return;
+    try {
+      const res = await App.get("/api/alerts?resolved=0");
+      const el = App.$('[data-counter="alerts"]');
+      if (el) { el.textContent = res.alerts.length; el.classList.toggle("hidden", !res.alerts.length); }
+    } catch (e) { /* ignore */ }
+  };
+
+  /* ------------------------------------------ first-Wednesday price review */
+
+  App.showPriceReview = function (status, onDone) {
+    const rows = status.current_prices.map((p) => `
+      <div class="card" data-fuel="${p.fuel_type_id}">
+        <div class="card__head"><h3>${App.fuelDot(p.color)}CURRENT ${App.esc(p.fuel.toUpperCase())} PRICE</h3>
+          <strong>${p.price_per_litre ? App.money(p.price_per_litre) + " / L" : "Not set"}</strong></div>
+        <div class="row">
+          <label class="checkbox"><input type="radio" name="d-${p.fuel_type_id}" value="KEEP" ${p.price_per_litre ? "" : "disabled"}> KEEP CURRENT PRICE</label>
+          <label class="checkbox"><input type="radio" name="d-${p.fuel_type_id}" value="UPDATE" ${p.price_per_litre ? "" : "checked"}> UPDATE PRICE</label>
+        </div>
+        <div class="field mt hidden" data-new><label>New ${App.esc(p.fuel)} price per litre (${App.esc(App.settings.currency)})</label>
+          <input class="input input--big" type="number" inputmode="decimal" min="0" step="0.01" data-price></div>
+      </div>`).join("");
+    const body = App.h(`<div class="stack">
+      <div class="banner banner--warn"><div class="banner__icon">⛽</div><div class="banner__body">
+        <h2>FUEL PRICE UPDATE REQUIRED</h2>
+        <p>${status.is_first_wednesday ? "Today is the first Wednesday of the new reporting period." : "A new reporting period has started."}
+        Please review and update the current fuel selling prices before continuing.</p></div></div>
+      ${rows}</div>`);
+    const sync = () => App.$$("[data-fuel]", body).forEach((card) => {
+      const choice = App.$("input[type=radio]:checked", card);
+      App.$("[data-new]", card).classList.toggle("hidden", !choice || choice.value !== "UPDATE");
+    });
+    body.addEventListener("change", sync);
+    sync();
+    App.modal({
+      title: "⛽ Fuel price review", body, dismissible: false,
+      actions: [{
+        label: "Confirm prices", cls: "btn--primary btn--lg",
+        onClick: async () => {
+          const decisions = [];
+          for (const card of App.$$("[data-fuel]", body)) {
+            const choice = App.$("input[type=radio]:checked", card);
+            if (!choice) { App.toast("Choose Keep or Update for every fuel", "error"); return false; }
+            const d = { fuel_type_id: Number(card.dataset.fuel), action: choice.value };
+            if (choice.value === "UPDATE") {
+              d.price_per_litre = App.$("[data-price]", card).value;
+              if (!(Number(d.price_per_litre) > 0)) { App.toast("Enter a valid new price", "error"); return false; }
+            }
+            decisions.push(d);
+          }
+          await App.post("/api/prices/review", { decisions });
+          App.toast("Fuel prices confirmed and recorded.", "ok");
+          if (onDone) onDone();
+        },
+      }],
+    });
+  };
+
+  async function managerPrompts() {
+    try {
+      const status = await App.get("/api/periods/status");
+      App.periodStatus = status;
+      if (status.price_review_required) App.showPriceReview(status, () => location.reload());
+    } catch (e) { /* non-fatal */ }
+  }
+
+  /* ---------------------------------------------------------------- init */
+
+  /**
+   * Every protected page calls App.init({ role, title }).
+   * role: "MANAGER" | "STAFF" | null (any logged-in user)
+   */
+  App.init = async function ({ role = null, title = "" } = {}) {
+    const me = await App.get("/api/auth/me");
+    App.user = me.user;
+    const onPasswordPage = location.pathname.endsWith("/change-password.html");
+    if (App.user.must_change_password && !onPasswordPage) {
+      location.href = "/change-password.html";
+      return new Promise(() => {});
+    }
+    if (role && App.user.role !== role) {
+      location.href = App.home(App.user);
+      return new Promise(() => {});
+    }
+    const s = await App.get("/api/settings");
+    App.station = s.station;
+    App.settings = s.settings;
+    App.demo = !!s.demo;
+    renderShell(title);
+    if (App.demo) renderTrainingBanner();
+    await syncClock();
+    tick();
+    setInterval(tick, 1000);
+    setInterval(syncClock, 5 * 60 * 1000);
+    if (App.user.role === "MANAGER") {
+      App.refreshAlertCount();
+      if (!onPasswordPage) managerPrompts();
+    }
+    return App.user;
+  };
+
+  /** Wrap async page code so failures are shown instead of silently breaking. */
+  App.run = (fn) => fn().catch((err) => {
+    if (err && err.message === "Please log in") return;
+    console.error(err);
+    App.error(err);
+  });
+})();

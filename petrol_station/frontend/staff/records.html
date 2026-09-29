@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>My Records</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/forms.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+  <div class="shell" id="shell">
+    <div class="main">
+      <main class="content">
+        <div class="page-head"><div><h1>My records</h1><p>Your fuel refills and expenses.</p></div></div>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="refills">My refills</button>
+          <button class="tab" data-tab="expenses">My expenses</button>
+        </div>
+        <section id="tab-refills" class="card"></section>
+        <section id="tab-expenses" class="stack hidden">
+          <div class="card">
+            <h2>Record an expense</h2>
+            <p class="small muted">Expenses you record wait for the manager's approval.</p>
+            <form id="expense-form" novalidate>
+              <div class="form-grid">
+                <div class="field"><label for="e-date">Date</label><input class="input" type="date" id="e-date" name="expense_date" required></div>
+                <div class="field"><label for="e-cat">Category</label>
+                  <input class="input" id="e-cat" name="category_name" list="e-cat-list" autocomplete="off" placeholder="Type or pick, e.g. Cleaning" required>
+                  <datalist id="e-cat-list"></datalist>
+                  <span class="hint">Pick a suggestion or write your own words.</span></div>
+                <div class="field"><label for="e-amount">Amount</label><input class="input input--big" type="number" inputmode="decimal" id="e-amount" name="amount" min="0" step="0.01" data-positive required></div>
+                <div class="field"><label for="e-ref">Reference</label><input class="input" id="e-ref" name="reference"></div>
+                <div class="field span-all"><label for="e-desc">What was it for? (your own words)</label><input class="input" id="e-desc" name="description" required></div>
+                <div class="field span-all"><label for="e-receipt">Receipt (photo or PDF)</label><input class="input" type="file" id="e-receipt" accept="image/*,application/pdf" capture="environment"></div>
+              </div>
+              <div class="form-actions"><button class="btn btn--primary btn--lg" type="submit">Save expense</button></div>
+            </form>
+          </div>
+          <div class="card" id="expense-list"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="/js/app.js"></script>
+  <script src="/js/validation.js"></script>
+  <script src="/js/pages/staff-records.js"></script>
+</body>
+</html>

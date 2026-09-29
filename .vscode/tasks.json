@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start station system (LAN :8000)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe serve.py",
+      "options": { "cwd": "${workspaceFolder}/petrol_station" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Start training portal (practice, :8001)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe serve_demo.py",
+      "options": { "cwd": "${workspaceFolder}/petrol_station" },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Run tests",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest -q tests -p no:cacheprovider",
+      "options": { "cwd": "${workspaceFolder}/petrol_station" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Install / update dependencies",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pip install -r petrol_station/requirements.txt",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run business checks once",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m flask --app backend.app check",
+      "options": { "cwd": "${workspaceFolder}/petrol_station" },
+      "problemMatcher": []
+    }
+  ]
+}

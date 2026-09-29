@@ -1,0 +1,162 @@
+"""Flask application factory.
+
+Run for development (from the petrol_station folder):
+    python -m backend.app
+Run for production:
+    python serve.py            (Waitress, works on Windows and Linux)
+    gunicorn -w 1 --threads 8 "backend.app:create_app()"
+"""
+import logging
+import os
+from decimal import Decimal
+from pathlib import Path
+
+from flask import Flask, abort, jsonify, request, send_from_directory
+from flask.json.provider import DefaultJSONProvider
+from werkzeug.exceptions import HTTPException
+
+from .config import Config
+from .extensions import db
+from .models.base import serialize
+from .routes.common import ApiError
+
+
+class JSONProvider(DefaultJSONProvider):
+    sort_keys = False
+
+    @staticmethod
+    def default(o):
+        if isinstance(o, Decimal):
+            return float(o)
+        value = serialize(o)
+        if value is o:
+            return DefaultJSONProvider.default(o)
+        return value
+
+
+def create_app(config_class=Config):
+    frontend_dir = Path(config_class.FRONTEND_DIR)
+    app = Flask(__name__, static_folder=None)
+    app.config.from_object(config_class)
+    app.json_provider_class = JSONProvider
+    app.json = JSONProvider(app)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    db.init_app(app)
+
+    from .auth.routes import bp as auth_bp
+    from .routes import (alerts, capital, dashboard, demo, director, expenses, fuel, pumps, refills, reports, roster,
+                         shifts, tanks, users)
+    app.register_blueprint(auth_bp)
+    for module in (users, pumps, tanks, fuel, capital, shifts, roster, refills, expenses, alerts, dashboard, reports,
+                   director, demo):
+        app.register_blueprint(module.bp)
+
+    @app.errorhandler(ApiError)
+    def handle_api_error(exc):
+        db.session.rollback()
+        return jsonify(exc.to_dict()), exc.status
+
+    @app.errorhandler(HTTPException)
+    def handle_http(exc):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": exc.description}), exc.code
+        if exc.code == 404:
+            return send_from_directory(frontend_dir, "404.html"), 404
+        return exc
+
+    @app.errorhandler(Exception)
+    def handle_unexpected(exc):
+        db.session.rollback()
+        app.logger.exception("Unhandled error")
+        return jsonify({"error": "Something went wrong on the server. The error has been logged."}), 500
+
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline'; font-src 'self'; "
+            "img-src 'self' data: blob:; connect-src 'self'")
+        if request.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        else:
+            # Pages, scripts and styles: always check for a newer version (cheap 304 if unchanged),
+            # so every phone gets updates immediately instead of an old cached copy.
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    # ------------------------------------------------------------ frontend
+    @app.get("/")
+    def index():
+        return send_from_directory(frontend_dir, "index.html")
+
+    @app.get("/<path:path>")
+    def frontend(path):
+        if path.startswith("api/"):
+            abort(404)
+        target = frontend_dir / path
+        if target.is_dir():
+            path = f"{path.rstrip('/')}/index.html"
+        return send_from_directory(frontend_dir, path)
+
+    @app.get("/healthz")
+    def health():
+        db.session.execute(db.text("SELECT 1"))
+        return jsonify({"status": "ok"})
+
+    register_cli(app)
+
+    with app.app_context():
+        from .services.bootstrap import bootstrap
+        created = bootstrap()
+        if app.config["DEMO_MODE"]:
+            from .models import Station
+            from .services.clock import paused_at
+            from .services.demo import needs_rebuild, reset, seed
+            if created:
+                seed()
+            else:
+                station_id = Station.query.first().id
+                if paused_at(station_id) is None or needs_rebuild(station_id):
+                    reset()   # older practice data, or the real station's shifts/pumps/tanks changed
+            app.logger.warning("Training portal: practice data ready (password for all practice accounts: Demo1234)")
+        elif created:
+            app.logger.warning("Created station and initial manager account '%s' - change the password at first login.",
+                               app.config["INITIAL_MANAGER_USERNAME"])
+
+    from .services import scheduler
+    scheduler.start(app)
+    return app
+
+
+def register_cli(app):
+    @app.cli.command("check")
+    def run_checks_command():
+        """Run the real-time business checks once (shifts, periods, alerts)."""
+        from .services.monitor import run_all_stations
+        run_all_stations()
+        print("Checks completed.")
+
+    @app.cli.command("reset-manager-password")
+    def reset_manager_password():
+        """Reset the first manager account's password (prompts for a new one)."""
+        import getpass
+        from .models import User
+        user = User.query.filter_by(role="MANAGER").order_by(User.id).first()
+        password = getpass.getpass(f"New password for {user.username}: ")
+        user.set_password(password)
+        user.must_change_password = True
+        user.is_active = True
+        user.locked_until = None
+        db.session.commit()
+        print("Password updated.")
+
+
+if __name__ == "__main__":
+    application = create_app()
+    application.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "5000")),
+                    debug=os.environ.get("FLASK_DEBUG", "1") == "1")

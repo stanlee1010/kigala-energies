@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Fuel Refill Entry</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/forms.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+  <div class="shell" id="shell">
+    <div class="main">
+      <main class="content" style="max-width:760px">
+
+        <!-- Step 1: entry form -->
+        <section id="step-form" class="card">
+          <h1>🚚 Fuel refill entry</h1>
+          <p class="muted">Record fuel delivered into the tanks. You will be asked to confirm before it is saved as final.</p>
+          <form id="refill-form" novalidate>
+            <div class="form-grid">
+              <div class="field"><label for="fuel_type_id">Fuel type</label>
+                <select class="input" id="fuel_type_id" name="fuel_type_id" required></select></div>
+              <div class="field hidden" id="tank-field"><label for="tank_id">Tank the fuel went into</label>
+                <select class="input" id="tank_id" name="tank_id"></select></div>
+              <div class="field"><label for="quantity_litres">Quantity added to the tank (litres)</label>
+                <input class="input input--big" type="number" inputmode="decimal" id="quantity_litres" name="quantity_litres" min="0" step="0.001" data-positive required></div>
+              <div class="field"><label for="refill_date">Date</label>
+                <input class="input" type="date" id="refill_date" name="refill_date" required></div>
+              <div class="field"><label for="refill_time">Time</label>
+                <input class="input" type="time" id="refill_time" name="refill_time" required></div>
+              <div class="field"><label for="supplier_name">Supplier</label>
+                <input class="input" id="supplier_name" name="supplier_name" list="suppliers" required>
+                <datalist id="suppliers"></datalist></div>
+              <div class="field"><label for="invoice_number">Invoice / delivery number</label>
+                <input class="input" id="invoice_number" name="invoice_number" required></div>
+              <div class="field"><label for="delivery_reference">Delivery reference (truck, note…)</label>
+                <input class="input" id="delivery_reference" name="delivery_reference"></div>
+              <div class="field"><label for="cost_per_litre">Cost per litre</label>
+                <input class="input input--big" type="number" inputmode="decimal" id="cost_per_litre" name="cost_per_litre" min="0" step="0.01" data-positive required></div>
+              <div class="field span-all"><label>Total cost (Quantity × Cost per litre)</label>
+                <div class="kpi"><div class="kpi__value" id="total-cost">—</div></div></div>
+              <div class="field span-all"><label for="notes">Notes</label>
+                <textarea class="input" id="notes" name="notes"></textarea></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn--primary btn--lg btn--block">Continue to confirmation →</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Step 2: confirmation -->
+        <section id="step-confirm" class="confirm-screen hidden" aria-live="polite">
+          <h2>CONFIRM FUEL REFILL</h2>
+          <p>You entered:</p>
+          <dl class="confirm-list" id="confirm-list"></dl>
+          <p class="confirm-question">Is this fuel refill information correct?</p>
+          <div class="confirm-buttons">
+            <button class="btn btn--ok btn--lg" id="yes-btn">✔ YES — CONFIRM</button>
+            <button class="btn btn--danger btn--lg" id="no-btn">✖ NO — GO BACK AND CORRECT</button>
+          </div>
+        </section>
+
+        <!-- Step 3: success -->
+        <section id="step-done" class="success-screen hidden" aria-live="polite">
+          <h2>✅ Fuel refill successfully confirmed.</h2>
+          <p><strong>This record can no longer be changed by you.</strong> Please contact the manager if a correction is required.</p>
+          <dl class="confirm-list" id="done-list"></dl>
+          <div class="form-actions">
+            <a class="btn btn--primary btn--lg" href="/staff/index.html">Back to my shift</a>
+            <a class="btn btn--lg" href="/staff/refill.html">Record another refill</a>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="/js/app.js"></script>
+  <script src="/js/validation.js"></script>
+  <script src="/js/pages/staff-refill.js"></script>
+</body>
+</html>

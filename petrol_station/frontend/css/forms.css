@@ -1,0 +1,133 @@
+/* ==========================================================================
+   Forms, buttons, tables, tabs and the refill confirmation screen
+   Large touch targets: staff enter readings on phones at the pumps.
+   ========================================================================== */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+  min-height: 44px;
+  padding: .55rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, border-color .15s, transform .05s;
+}
+.btn:hover { background: var(--surface-2); text-decoration: none; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn--primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn--primary:hover { background: var(--brand-dark); }
+.btn--danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+.btn--danger:hover { background: #b91c1c; }
+.btn--ok { background: #16a34a; border-color: #16a34a; color: #fff; }
+.btn--ok:hover { background: #15803d; }
+.btn--warn { background: var(--accent); border-color: var(--accent); color: #111827; }
+.btn--ghost { background: transparent; border-color: transparent; color: var(--brand); }
+.btn--sm { min-height: 34px; padding: .3rem .7rem; font-size: .85rem; }
+.btn--lg { min-height: 56px; font-size: 1.05rem; padding: .8rem 1.4rem; }
+.btn--block { width: 100%; }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .9rem 1rem; }
+.form-grid .span-all { grid-column: 1 / -1; }
+
+.field { display: flex; flex-direction: column; gap: .3rem; }
+.field label { font-weight: 600; font-size: .9rem; }
+.field .hint { font-size: .8rem; color: var(--muted); }
+.field .error { font-size: .82rem; color: var(--danger); font-weight: 600; }
+
+.input, select.input, textarea.input {
+  width: 100%;
+  min-height: 48px;
+  padding: .6rem .8rem;
+  font: inherit; font-size: 1rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+textarea.input { min-height: 90px; resize: vertical; }
+.input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(15, 118, 110, .18); }
+.input.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(185, 28, 28, .12); }
+.input--big { min-height: 58px; font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.input--sm { min-height: 36px; padding: .3rem .6rem; font-size: .9rem; }
+
+.checkbox { display: flex; gap: .5rem; align-items: center; font-weight: 500; cursor: pointer; }
+.checkbox input { width: 20px; height: 20px; }
+
+.form-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+
+.filters { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; margin-bottom: 1rem; }
+.filters .field { min-width: 150px; }
+.filters .input { min-height: 40px; }
+
+/* ------------------------------------------------------------------ tables */
+
+.table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.table th, .table td { padding: .6rem .75rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table th { background: var(--surface-2); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+.table tbody tr:hover { background: var(--surface-2); }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table td.actions { white-space: nowrap; text-align: right; }
+.table td.actions .btn + .btn { margin-left: .3rem; }
+.table tfoot td { font-weight: 700; background: var(--surface-2); }
+
+/* Phones: tables collapse into labelled cards */
+@media (max-width: 700px) {
+  .table--cards thead { display: none; }
+  .table--cards, .table--cards tbody, .table--cards tr, .table--cards td { display: block; width: 100%; }
+  .table--cards tr { border-bottom: 1px solid var(--border); padding: .5rem 0; }
+  .table--cards td { border: 0; padding: .3rem .8rem; display: flex; justify-content: space-between; gap: 1rem; text-align: right; }
+  .table--cards td::before { content: attr(data-label); font-weight: 600; color: var(--muted); text-align: left; }
+  .table--cards td.actions { justify-content: flex-end; }
+  .table--cards td.actions::before { content: none; }
+  .table-wrap { border: 0; }
+}
+
+/* -------------------------------------------------------------------- tabs */
+
+.tabs { display: flex; gap: .25rem; border-bottom: 2px solid var(--border); margin-bottom: 1rem; overflow-x: auto; }
+.tab {
+  background: none; border: 0; padding: .7rem 1rem; font: inherit; font-weight: 600; color: var(--muted);
+  cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap;
+}
+.tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+
+/* ------------------------------------------------ refill confirmation screen */
+
+.confirm-screen {
+  border: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 1.25rem;
+}
+.confirm-screen h2 { color: var(--warn); }
+.confirm-list { display: grid; grid-template-columns: auto 1fr; gap: .45rem 1.25rem; margin: 1rem 0; font-size: 1.05rem; }
+.confirm-list dt { color: var(--muted); font-weight: 600; }
+.confirm-list dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.confirm-list dd.big { font-size: 1.5rem; color: var(--brand); }
+.confirm-question { font-size: 1.2rem; font-weight: 800; margin: 1rem 0; text-align: center; }
+.confirm-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+@media (max-width: 480px) { .confirm-buttons { grid-template-columns: 1fr; } }
+
+.success-screen { border: 3px solid #16a34a; border-radius: var(--radius); padding: 1.25rem; background: var(--ok-soft); }
+.success-screen h2 { color: var(--ok); }
+
+/* ------------------------------------------------------ reading entry rows */
+
+.reading-card {
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--brand);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  background: var(--surface);
+}
+.reading-card h3 { display: flex; align-items: center; gap: .5rem; }
+.reading-card .form-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.reading-result { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin-top: .75rem; font-size: .95rem; }
+.reading-result strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }

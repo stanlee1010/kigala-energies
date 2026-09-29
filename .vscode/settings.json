@@ -1,0 +1,19 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}/petrol_station",
+  "python.testing.pytestArgs": ["tests", "-p", "no:cacheprovider"],
+  "python.envFile": "${workspaceFolder}/petrol_station/.env",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  },
+  "files.associations": { "*.html": "html" },
+  "editor.formatOnSave": false,
+  "[python]": { "editor.rulers": [120] },
+  "[javascript]": { "editor.tabSize": 2 },
+  "[css]": { "editor.tabSize": 2 },
+  "[html]": { "editor.tabSize": 2 }
+}

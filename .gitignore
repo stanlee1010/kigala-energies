@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+petrol_station/database/*.db
+petrol_station/database/*.db-journal
+petrol_station/database/backups/
+petrol_station/uploads/*
+!petrol_station/uploads/.gitkeep
+petrol_station/reports/*
+!petrol_station/reports/.gitkeep

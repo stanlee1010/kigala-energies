@@ -1,0 +1,44 @@
+# Render Blueprint: web service + managed PostgreSQL.
+# Push this folder to GitHub, then in Render choose New > Blueprint and select the repo.
+services:
+  - type: web
+    name: kigala-energies
+    runtime: docker
+    rootDir: petrol_station
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: station-files
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kigala-energies-db
+          property: connectionString
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: STATION_TIMEZONE
+        value: Africa/Dar_es_Salaam
+      - key: STATION_CURRENCY
+        value: TZS
+      - key: STATION_NAME
+        value: Kigala Energies
+      - key: MANAGER_USERNAME
+        value: manager
+      - key: MANAGER_PASSWORD
+        sync: false   # you type the first manager password in the Render dashboard
+      - key: UPLOAD_DIR
+        value: /data/uploads
+      - key: REPORTS_DIR
+        value: /data/reports
+
+databases:
+  - name: kigala-energies-db
+    databaseName: petrol_station
+    plan: basic-256mb

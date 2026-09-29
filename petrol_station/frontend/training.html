@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Training Guide · Petrol Station Management</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/forms.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+  <header class="guide-head">
+    <div class="guide-head__inner">
+      <div class="sidebar__logo">🎓</div>
+      <div>
+        <h1>Training guide</h1>
+        <p>Learn the station system step by step. Practise every lesson in the training portal — nothing there affects the real station.</p>
+      </div>
+    </div>
+  </header>
+  <main class="content guide">
+    <div id="where" class="banner banner--info hidden"></div>
+    <div class="row no-print">
+      <strong>⛽ Lessons for pump attendants</strong>
+      <span class="spacer"></span>
+      <span class="small muted" id="progress"></span>
+      <button class="btn btn--sm" id="print-btn">🖨 Print</button>
+      <button class="btn btn--sm" id="clear-btn">Clear my ticks</button>
+    </div>
+    <div id="lessons" class="stack"></div>
+  </main>
+  <script src="/js/app.js"></script>
+  <script src="/js/pages/training.js"></script>
+</body>
+</html>

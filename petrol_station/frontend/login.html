@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Log in · Petrol Station Management</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/forms.css">
+</head>
+<body>
+  <main class="auth-page">
+    <div class="card auth-card">
+      <div class="sidebar__logo">⛽</div>
+      <h1 id="station-name">Petrol Station</h1>
+      <p class="muted" id="login-hint">Sign in with the username and password given to you by the manager.</p>
+      <form id="login-form" class="stack" novalidate>
+        <div class="field">
+          <label for="username">Username</label>
+          <input class="input" id="username" name="username" autocomplete="username" autocapitalize="none" required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn--primary btn--lg btn--block" type="submit">Log in</button>
+        <p class="small muted center" id="forgot">Forgot your password? Ask the station manager to reset it.</p>
+      </form>
+      <section id="demo-panel" class="hidden">
+        <h2 class="small" style="margin-top:1rem">CHOOSE THE SHIFT TO PRACTISE — works at any time of day</h2>
+        <div class="demo-accounts" id="demo-accounts"></div>
+        <p class="small muted" style="margin-top:.75rem">All practice accounts use the password <strong>Demo1234</strong>.
+          <a href="/training.html" target="_blank" rel="noopener">Open the training guide</a></p>
+      </section>
+      <div id="training-link" class="training-link hidden">
+        <a class="btn btn--block" href="#">🎓 Training portal</a>
+        <p class="small muted center" id="training-note"></p>
+      </div>
+    </div>
+  </main>
+  <script src="/js/app.js"></script>
+  <script src="/js/validation.js"></script>
+  <script src="/js/pages/login.js"></script>
+</body>
+</html>

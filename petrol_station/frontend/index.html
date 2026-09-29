@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Petrol Station Management</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="auth-page">
+    <div class="card auth-card center">
+      <div class="sidebar__logo" style="margin:0 auto .75rem">⛽</div>
+      <h1>Petrol Station Management</h1>
+      <p class="muted" id="status">Opening your dashboard…</p>
+      <div id="no-backend" hidden>
+        <p><strong>The station server is not answering on this address.</strong></p>
+        <p>This page was opened without the Python backend (for example with VS Code "Go Live" / Live Server,
+           or by double-clicking the file). Start the system with <code>start.bat</code> or <kbd>Ctrl+Shift+B</kbd> in VS Code,
+           then open:</p>
+        <p><a href="http://localhost:8000/">http://localhost:8000</a></p>
+      </div>
+    </div>
+  </main>
+  <script src="js/app.js"></script>
+  <script src="js/pages/index.js"></script>
+</body>
+</html>
