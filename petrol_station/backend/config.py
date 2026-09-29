@@ -47,16 +47,30 @@ class Config:
     # so practice matches the real station.
     REAL_DATABASE_URL = os.environ.get("REAL_DATABASE_URL", "")
 
+    # Secrets come only from the environment / .env (never from the code or git).
+    # In production a missing SECRET_KEY stops the app (see create_app) instead of silently
+    # inventing one that would log everybody out on every restart.
     SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+    SECRET_KEY_FROM_ENV = bool(os.environ.get("SECRET_KEY"))
 
     SQLALCHEMY_DATABASE_URI = _database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
-    SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", False)
+    # HTTPS: when served on the internet set FORCE_HTTPS=true (http -> https redirect, HSTS,
+    # Secure cookies). TRUST_PROXY=1 when behind a proxy/load balancer (Render, Nginx) so the
+    # real client IP and https scheme are read from its X-Forwarded-* headers - never otherwise.
+    FORCE_HTTPS = _bool("FORCE_HTTPS", False)
+    TRUST_PROXY = int(os.environ.get("TRUST_PROXY", "0"))
+
+    SESSION_COOKIE_HTTPONLY = True          # JavaScript can never read the session cookie
+    SESSION_COOKIE_SAMESITE = "Lax"         # not sent on cross-site form posts
+    SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", False) or FORCE_HTTPS
     PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.environ.get("SESSION_HOURS", "12")))
+
+    # Login protection (per client IP, on top of the 5-attempt account lock-out).
+    LOGIN_RATE_LIMIT = int(os.environ.get("LOGIN_RATE_LIMIT", "20"))          # attempts ...
+    LOGIN_RATE_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_WINDOW", "600"))  # ... per 10 minutes
 
     FRONTEND_DIR = PROJECT_DIR / "frontend"
     UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", PROJECT_DIR / "uploads"))

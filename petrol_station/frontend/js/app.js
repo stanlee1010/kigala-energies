@@ -34,7 +34,8 @@
   /* ------------------------------------------------------------------ API */
 
   App.api = async function (method, url, data, opts = {}) {
-    const init = { method, headers: { Accept: "application/json" }, credentials: "same-origin" };
+    // X-Requested-With proves the request comes from this site's own pages (anti-CSRF, checked by the server).
+    const init = { method, headers: { Accept: "application/json", "X-Requested-With": "fetch" }, credentials: "same-origin" };
     if (data instanceof FormData) init.body = data;
     else if (data !== undefined) {
       init.headers["Content-Type"] = "application/json";

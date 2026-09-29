@@ -11,7 +11,7 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, redirect, request, send_from_directory
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.exceptions import HTTPException
 
@@ -38,6 +38,13 @@ def create_app(config_class=Config):
     frontend_dir = Path(config_class.FRONTEND_DIR)
     app = Flask(__name__, static_folder=None)
     app.config.from_object(config_class)
+    if app.config["ENV_NAME"] == "production" and not app.config.get("SECRET_KEY_FROM_ENV") and not app.testing:
+        raise RuntimeError("SECRET_KEY must be set in the environment (.env) when APP_ENV=production")
+    if app.config.get("TRUST_PROXY"):
+        # Behind Render/Nginx: take the client IP and https scheme from the trusted proxy's headers.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        hops = app.config["TRUST_PROXY"]
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
     app.json_provider_class = JSONProvider
     app.json = JSONProvider(app)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -52,10 +59,35 @@ def create_app(config_class=Config):
                    director, demo):
         app.register_blueprint(module.bp)
 
+    STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
+
+    @app.before_request
+    def enforce_https_and_same_origin():
+        # Force HTTPS on the internet (the health check stays reachable for the host's probe).
+        if app.config.get("FORCE_HTTPS") and not request.is_secure and request.path != "/healthz":
+            return redirect(request.url.replace("http://", "https://", 1), code=308)
+        # Block cross-site request forgery: a state-changing API call must be JSON or carry the
+        # X-Requested-With header that only this site's own JavaScript sends (browsers do not let
+        # other websites add it without permission).
+        if request.path.startswith("/api/") and request.method in STATE_CHANGING:
+            if not request.is_json and request.headers.get("X-Requested-With") != "fetch":
+                return jsonify({"error": "Request blocked: it did not come from this website."}), 403
+        return None
+
     @app.errorhandler(ApiError)
     def handle_api_error(exc):
         db.session.rollback()
         return jsonify(exc.to_dict()), exc.status
+
+    @app.errorhandler(ValueError)
+    @app.errorhandler(TypeError)
+    def handle_bad_value(exc):
+        # e.g. letters sent where a number is expected: a clear 400, not a server error.
+        db.session.rollback()
+        if request.path.startswith("/api/"):
+            app.logger.warning("Rejected invalid input on %s: %s", request.path, exc, exc_info=True)
+            return jsonify({"error": "Some of the information sent is not valid. Please check and try again."}), 400
+        raise exc
 
     @app.errorhandler(HTTPException)
     def handle_http(exc):
@@ -76,11 +108,18 @@ def create_app(config_class=Config):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        response.headers.setdefault("Permissions-Policy",
+                                    "geolocation=(), microphone=(), payment=(), usb=(), camera=(self)")
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline'; font-src 'self'; "
-            "img-src 'self' data: blob:; connect-src 'self'")
+            "img-src 'self' data: blob:; connect-src 'self'; "
+            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+        if app.config.get("FORCE_HTTPS"):
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         else:

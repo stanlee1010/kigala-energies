@@ -30,6 +30,16 @@ def fmt(value, kind, currency=""):
     return str(value)
 
 
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def safe_text(text):
+    """Stop spreadsheet formula injection: text typed by users (e.g. an expense description
+    '=HYPERLINK(...)') must never run as a formula when the Excel file is opened."""
+    text = str(text)
+    return "'" + text if text.startswith(FORMULA_START) else text
+
+
 def _cell_value(value, kind):
     if value is None:
         return None
@@ -37,7 +47,7 @@ def _cell_value(value, kind):
         return float(value)
     if isinstance(value, (date, datetime)):
         return value
-    return str(value)
+    return safe_text(value)
 
 
 def to_excel(report, station_name, currency):
@@ -45,13 +55,13 @@ def to_excel(report, station_name, currency):
     ws = wb.active
     ws.title = "Summary"
     bold, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor=BRAND[1:])
-    ws["A1"] = f"{station_name} — {report['title']}"
+    ws["A1"] = safe_text(f"{station_name} — {report['title']}")
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = report.get("subtitle", "")
+    ws["A2"] = safe_text(report.get("subtitle", ""))
     ws["A3"] = f"Generated {datetime.now():%d/%m/%Y %H:%M}"
     row = 5
     for label, value, kind in report["summary"]:
-        ws.cell(row=row, column=1, value=label).font = Font(bold=True)
+        ws.cell(row=row, column=1, value=safe_text(label)).font = Font(bold=True)
         cell = ws.cell(row=row, column=2, value=_cell_value(value, kind))
         if kind == "money":
             cell.number_format = f'"{currency}" #,##0.00'

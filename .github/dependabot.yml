@@ -1,0 +1,13 @@
+# Dependency scanning: GitHub opens a pull request when a Python package or GitHub Action
+# used by the project has a newer (or security-fixed) version.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/petrol_station"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

@@ -184,6 +184,9 @@ code { font-family: Consolas, "Courier New", monospace; font-size: .9em; }
 .training-banner strong { letter-spacing: .06em; }
 .training-banner .btn { background: rgba(255, 255, 255, .85); color: #422006; border-color: #d97706; }
 
+/* Login bot trap: off-screen for people, still present for bots that fill every field. */
+.hp-field { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+
 .training-link { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--border); }
 .training-link .btn { background: #fde68a; border-color: #d97706; color: #422006; }
 .training-link .btn:hover { background: #fcd34d; }

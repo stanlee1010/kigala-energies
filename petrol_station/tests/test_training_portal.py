@@ -56,7 +56,7 @@ def test_reset_rebuilds_practice_data(demo_app):
     morning = login(demo_app, "demo.morning", "Demo1234")
     shift = morning.get("/api/staff/my-shift").json["shift"]
     morning.post(f"/api/shifts/{shift['id']}/start")
-    assert demo_app.test_client().post("/api/demo/reset").status_code == 200
+    assert demo_app.test_client().post("/api/demo/reset", json={}).status_code == 200
     morning = login(demo_app, "demo.morning", "Demo1234")
     assert morning.get("/api/staff/my-shift").json["shift"]["status"] == "SCHEDULED"
 

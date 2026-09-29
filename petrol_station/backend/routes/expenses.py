@@ -20,7 +20,25 @@ from .common import (ApiError, body, date_field, decimal_field, get_or_404, opti
 
 bp = Blueprint("expenses", __name__, url_prefix="/api")
 
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic"}
+# Receipts: extension -> the real file type its contents must have.
+ALLOWED_EXTENSIONS = {".pdf": "pdf", ".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".webp": "webp", ".heic": "heic"}
+CONTENT_TYPES = {"pdf": "application/pdf", "png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp",
+                 "heic": "image/heic"}
+
+
+def sniff_file_type(head):
+    """Identify a file from its first bytes ("magic numbers")."""
+    if head.startswith(b"%PDF-"):
+        return "pdf"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if head[4:8] == b"ftyp" and head[8:12] in (b"heic", b"heix", b"mif1", b"msf1", b"heim", b"heis"):
+        return "heic"
+    return None
 
 
 def _expense_dict(e, names):
@@ -218,13 +236,20 @@ def upload():
     ext = Path(original).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise ApiError("Receipts must be PDF or image files")
+    # Check the real contents, not just the name: a web page renamed to .png is refused.
+    head = file.stream.read(16)
+    file.stream.seek(0)
+    kind = sniff_file_type(head)
+    if kind is None or kind != ALLOWED_EXTENSIONS[ext]:
+        raise ApiError("That file is not a real PDF or photo. Please choose the receipt photo or PDF again.")
     folder = Path(current_app.config["UPLOAD_DIR"])
     folder.mkdir(parents=True, exist_ok=True)
-    stored = f"{uuid.uuid4().hex}{ext}"
+    stored = f"{uuid.uuid4().hex}{ext}"          # random name: never the uploader's file name
     path = folder / stored
     file.save(path)
     att = Attachment(station_id=me.station_id, file_name=original, stored_name=stored,
-                     content_type=file.mimetype, size_bytes=path.stat().st_size, uploaded_by=me.id)
+                     content_type=CONTENT_TYPES[kind],    # decided by the server, never by the browser
+                     size_bytes=path.stat().st_size, uploaded_by=me.id)
     db.session.add(att)
     db.session.commit()
     return jsonify({"attachment": att.to_dict()}), 201
@@ -240,4 +265,9 @@ def download(attachment_id):
     path = Path(current_app.config["UPLOAD_DIR"]) / att.stored_name
     if not path.exists():
         raise ApiError("File is missing from storage", 404)
-    return send_file(path, mimetype=att.content_type, download_name=att.file_name)
+    # Only ever served as a PDF or an image type (older records: re-derived from the extension).
+    mimetype = att.content_type if att.content_type in CONTENT_TYPES.values() else \
+        CONTENT_TYPES.get(ALLOWED_EXTENSIONS.get(Path(att.stored_name).suffix.lower()), "application/octet-stream")
+    response = send_file(path, mimetype=mimetype, download_name=att.file_name)
+    response.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
+    return response

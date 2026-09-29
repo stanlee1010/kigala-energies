@@ -5,7 +5,8 @@ from flask import Blueprint, current_app, jsonify, session
 from ..extensions import db
 from ..models import Station, User, utcnow
 from ..routes.common import ApiError, body, require_text, validate_password
-from ..services import audit
+from ..services import audit, ratelimit
+from ..services.audit import client_ip
 from . import current_user, login_required, login_user
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -46,8 +47,20 @@ def switch_station():
 @bp.post("/login")
 def login():
     data = body()
-    username = require_text(data, "username").lower()
-    password = data.get("password") or ""
+    # Bot protection: "website" is a hidden field people never see or fill; simple bots fill every field.
+    if str(data.get("website") or "").strip():
+        first = Station.query.order_by(Station.id).first()
+        if first:
+            audit.log(first.id, None, "BLOCKED BOT LOGIN", reason=f"hidden bot-trap field filled, from {client_ip()}")
+            db.session.commit()
+        raise ApiError("Incorrect username or password", 401)
+    # Rate limit per client IP (on top of the 5-attempt lock-out per account).
+    wait = ratelimit.hit(f"login:{client_ip()}", current_app.config["LOGIN_RATE_LIMIT"],
+                         current_app.config["LOGIN_RATE_WINDOW_SECONDS"])
+    if wait:
+        raise ApiError(f"Too many login attempts from this device. Try again in {max(1, wait // 60)} minute(s).", 429)
+    username = require_text(data, "username", max_len=60).lower()
+    password = str(data.get("password") or "")[:200]
     user = User.query.filter(db.func.lower(User.username) == username).first()
     now = utcnow()
 

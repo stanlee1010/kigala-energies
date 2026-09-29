@@ -23,6 +23,12 @@ services:
           property: connectionString
       - key: SESSION_COOKIE_SECURE
         value: "true"
+      - key: FORCE_HTTPS          # http -> https redirect + HSTS
+        value: "true"
+      - key: TRUST_PROXY          # Render's load balancer supplies the real client IP / https scheme
+        value: "1"
+      - key: DIRECTOR_PASSWORD
+        sync: false   # you type the first director password in the Render dashboard
       - key: STATION_TIMEZONE
         value: Africa/Dar_es_Salaam
       - key: STATION_CURRENCY

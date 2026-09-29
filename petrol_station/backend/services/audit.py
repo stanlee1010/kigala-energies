@@ -7,10 +7,12 @@ from ..models.base import dumps, serialize
 
 
 def client_ip():
+    """The real client address. X-Forwarded-For is only honoured when TRUST_PROXY is set: then
+    ProxyFix (in create_app) has already put the proxy-verified address into remote_addr.
+    Reading the header directly would let anyone fake their IP (and dodge rate limits)."""
     if not has_request_context():
         return None
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    return (forwarded.split(",")[0].strip() or request.remote_addr) if forwarded else request.remote_addr
+    return request.remote_addr
 
 
 def snapshot(obj, fields=None):

@@ -84,6 +84,35 @@ Set `DATABASE_URL` to PostgreSQL or MySQL. Set `SESSION_COOKIE_SECURE=true` behi
 
 **Option C: this PC as the station server.** Run `start.bat`. Staff use it over the local Wi-Fi.
 
+## Security
+
+Each item below is covered by `petrol_station/tests/test_security.py`. On GitHub, `.github/workflows/security.yml` also scans dependencies (pip-audit) and the git history (gitleaks) on every push and every week. Dependabot opens update pull requests.
+
+- **Secrets:**
+  - They live only in `.env`, which git ignores, and are never in the code or its history.
+  - In production (`APP_ENV=production`) the app refuses to start without its own `SECRET_KEY`.
+- **Server-side access control on every API route:**
+  - Staff, manager and director roles.
+  - Each record is locked to its station and owner, so guessing another station's IDs returns "not found".
+  - Fields such as role, status or approval cannot be set from the browser.
+- **Logins:**
+  - Passwords are hashed (scrypt).
+  - Temporary passwords must be changed.
+  - An account locks after 5 wrong passwords.
+  - Login attempts are limited per device.
+  - A hidden bot-trap field refuses automated logins.
+- **Sessions:** HttpOnly, SameSite and Secure cookies. Requests forged from other websites are blocked.
+- **Input:**
+  - Every value is validated on the server.
+  - Database queries are parameterised.
+  - User text is escaped on screen, in PDFs and in Excel (no formula injection).
+- **Receipts:**
+  - Only real PDF and photo files are accepted, checked by content and limited to 10 MB.
+  - Files are stored under random names and served with a locked-down content type.
+- **Headers:** CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and COOP. The chart library is integrity-checked.
+- **On the internet:** set `FORCE_HTTPS=true` (redirect, HSTS and Secure cookies), and set `TRUST_PROXY=1` behind Render or Nginx. `render.yaml` already does both.
+- **Data at rest:** use an encrypted disk (Windows BitLocker on the station PC) or a managed database with encryption at rest, such as Render PostgreSQL. Keep the `database/backups` folder private.
+
 ## Key business rules
 
 - **Clock.** Shifts, reporting periods, alerts and profit use the server's clock in the station timezone (Settings). The browser clock is only used for display.

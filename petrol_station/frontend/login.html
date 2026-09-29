@@ -24,6 +24,11 @@
           <label for="password">Password</label>
           <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
         </div>
+        <!-- Bot trap: hidden from people (and screen readers); automated bots fill it in and are refused. -->
+        <div class="hp-field" aria-hidden="true">
+          <label for="website">Leave this empty</label>
+          <input id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
         <button class="btn btn--primary btn--lg btn--block" type="submit">Log in</button>
         <p class="small muted center" id="forgot">Forgot your password? Ask the station manager to reset it.</p>
       </form>
