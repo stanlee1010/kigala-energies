@@ -91,20 +91,21 @@ def shifts_of_day(station_id, day):
 
 
 def online_view(shift):
-    """Staff: the night shift's online money (fixed) + this shift's own online money. No sales figures."""
-    own = shift_money(shift)["online"]
+    """Staff: the PREVIOUS shift's online money exactly as its staff typed it (fixed, read-only)
+    + this shift's own online money. Only online money - never sales figures."""
+    from .shifts import previous_shift
+    mine = ShiftCash.query.filter_by(shift_id=shift.id).first()
+    own = money(mine.online_total) if mine else ZERO
     previous = None
-    first_of_day = Shift.query.filter(Shift.station_id == shift.station_id, Shift.shift_date == shift.shift_date,
-                                      Shift.status != "CANCELLED").order_by(Shift.sequence).first()
-    if first_of_day is not None and first_of_day.id == shift.id:     # the opening (Morning) shift
-        from .shifts import previous_shift
-        night = previous_shift(shift)
-        if night is not None:
-            row = ShiftCash.query.filter_by(shift_id=night.id).first()
-            previous = {"shift_id": night.id, "name": night.type_name, "shift_date": night.shift_date,
-                        "online": money(row.online_total) if row else ZERO}
+    before = previous_shift(shift)
+    if before is not None:
+        row = ShiftCash.query.filter_by(shift_id=before.id).first()
+        previous = {"shift_id": before.id, "name": before.type_name, "shift_date": before.shift_date,
+                    "online_expression": row.online_expression if row else "",   # e.g. "4000+60000+5000"
+                    "online": money(row.online_total) if row else ZERO}
     carried = previous["online"] if previous else ZERO
-    return {"previous": previous, "own": own, "total": money(carried + own)}
+    return {"previous": previous, "own_expression": mine.online_expression if mine else "", "own": own,
+            "total": money(carried + own)}
 
 
 def day_money(station_id, day):

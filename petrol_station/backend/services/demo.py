@@ -27,7 +27,6 @@ from .settings import get_setting, set_setting
 from .shifts import active_definitions, definition_windows, get_or_create_shift, resequence
 from .tanks import tank_level
 
-DEMO_PASSWORD = "Demo1234"
 HISTORY_DAYS = 10
 TRAINEE_NAMES = ("Asha Juma", "Baraka Ali", "Upendo Mushi", "Daudi Mrema", "Neema Said", "Juma Hassani")
 FALLBACK_PRICES = {"PETROL": 3100, "DIESEL": 2950}
@@ -180,7 +179,7 @@ def trainees(station_id):
         d = defs.get(u.default_shift_definition_id)
         start, end = hours.get(d.id, ("", "")) if d else ("", "")
         night = bool(start) and (start >= "18:00" or start < "05:00")
-        result.append({"username": u.username, "full_name": u.full_name, "role": u.role, "password": DEMO_PASSWORD,
+        result.append({"username": u.username, "full_name": u.full_name, "role": u.role,
                        "shift": d.name if d else None, "start": start, "end": end, "night": night,
                        "about": f"{d.name} shift attendant" if d else "Pump attendant"})
     return result
@@ -189,6 +188,22 @@ def trainees(station_id):
 def accounts():
     station = Station.query.first()
     return trainees(station.id) if station else []
+
+
+def scramble_passwords():
+    """Give every practice account a fresh random password (older training data used a shared one)."""
+    for user in User.query.filter(User.username.like("demo.%")):
+        user.set_password(secrets.token_hex(24))
+
+
+def practice_account(username):
+    """The active practice attendant with this username, or None (never a manager or a real account)."""
+    station = Station.query.first()
+    if station is None:
+        return None
+    return next((u for u in User.query.filter(User.station_id == station.id, User.role == "STAFF",
+                                              User.is_active.is_(True), User.username.like("demo.%"))
+                 if u.username == username), None)
 
 
 def seed(rng=None):
@@ -225,7 +240,8 @@ def seed(rng=None):
                     username=f"demo.{definition.code.lower()}"[:60],
                     full_name=TRAINEE_NAMES[i % len(TRAINEE_NAMES)],
                     default_shift_definition_id=definition.id)
-        user.set_password(DEMO_PASSWORD)
+        # Nobody knows this password: trainees are signed in by the server (POST /api/demo/login).
+        user.set_password(secrets.token_hex(24))
         db.session.add(user)
         users.append(user)
     db.session.flush()

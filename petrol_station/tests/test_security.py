@@ -14,7 +14,7 @@ from backend.reports.exporters import safe_text, to_excel
 from .conftest import browser_client, login
 
 PUBLIC_API = {("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("GET", "/api/demo/info"),
-              ("POST", "/api/demo/reset")}
+              ("POST", "/api/demo/reset"), ("POST", "/api/demo/login")}   # demo ones: 403 off the training portal
 
 
 def _url(rule):
@@ -23,7 +23,8 @@ def _url(rule):
         url = (url.replace(f"<int:{arg}>", "1").replace(f"<{arg}>", "daily")
                .replace(f"<any(activate, deactivate):{arg}>", "activate")
                .replace(f"<any(approve, reject, void, cancel):{arg}>", "approve")
-               .replace(f"<any(disable, enable):{arg}>", "disable"))
+               .replace(f"<any(disable, enable):{arg}>", "disable")
+               .replace(f"<any(remove, restore):{arg}>", "remove"))
     return url
 
 

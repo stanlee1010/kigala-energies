@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>Manager Dashboard</title>
+  <meta name="description" content="Manager dashboard: today's fuel sales, money, tank levels, warnings and performance charts.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta property="og:title" content="Manager Dashboard">
+  <meta property="og:description" content="Manager dashboard: today's fuel sales, money, tank levels, warnings and performance charts.">
+  <meta property="og:image" content="/img/share.png">
+  <meta property="og:image:alt" content="Kigala Energies petrol station system">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/forms.css">
@@ -60,10 +68,10 @@
           <button class="tab" data-g="yearly">Yearly</button>
         </div>
         <section class="chart-grid">
-          <div class="card"><h3>Revenue</h3><div class="chart-box"><canvas id="chart-revenue" aria-label="Revenue chart"></canvas></div></div>
-          <div class="card"><h3>Fuel sold (litres)</h3><div class="chart-box"><canvas id="chart-fuel" aria-label="Fuel sold chart"></canvas></div></div>
-          <div class="card"><h3>Operating expenses</h3><div class="chart-box"><canvas id="chart-expenses" aria-label="Expenses chart"></canvas></div></div>
-          <div class="card"><h3>Profit / loss</h3><div class="chart-box"><canvas id="chart-profit" aria-label="Profit and loss chart"></canvas></div></div>
+          <div class="card"><h3>Revenue</h3><div class="chart-box"><canvas role="img" id="chart-revenue" aria-label="Revenue chart"></canvas></div></div>
+          <div class="card"><h3>Fuel sold (litres)</h3><div class="chart-box"><canvas role="img" id="chart-fuel" aria-label="Fuel sold chart"></canvas></div></div>
+          <div class="card"><h3>Operating expenses</h3><div class="chart-box"><canvas role="img" id="chart-expenses" aria-label="Expenses chart"></canvas></div></div>
+          <div class="card"><h3>Profit / loss</h3><div class="chart-box"><canvas role="img" id="chart-profit" aria-label="Profit and loss chart"></canvas></div></div>
         </section>
         <details class="card" style="margin-top:1rem">
           <summary><strong>Show chart data as a table</strong></summary>

@@ -1,0 +1,4 @@
+# Kigala Energies petrol station system - a private staff/manager tool.
+# Search engines should not list any of its pages.
+User-agent: *
+Disallow: /

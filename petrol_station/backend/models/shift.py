@@ -92,6 +92,22 @@ class ShiftStaff(SerializerMixin, db.Model):
     pumps = db.relationship("ShiftStaffPump", lazy="selectin", cascade="all, delete-orphan")
 
 
+class WeeklyShiftChoice(TimestampMixin, SerializerMixin, db.Model):
+    """The shift a staff member chose to work for one week (Monday to Sunday).
+
+    It overrides their regular shift for that week; shift changes always start on a Monday.
+    """
+
+    __tablename__ = "weekly_shift_choices"
+    __table_args__ = (db.UniqueConstraint("user_id", "week_start", name="uq_weekly_choice_user_week"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    station_id = db.Column(db.Integer, db.ForeignKey("stations.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    week_start = db.Column(db.Date, nullable=False)          # always a Monday
+    shift_definition_id = db.Column(db.Integer, db.ForeignKey("shift_definitions.id"), nullable=False)
+
+
 class ShiftStaffPump(db.Model):
     """Which pumps a staff member is responsible for during a shift."""
 

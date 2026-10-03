@@ -93,6 +93,8 @@ App.run(async () => {
       ${fuelTiles}
       <div class="kpi"><div class="kpi__label">Total fuel sold</div><div class="kpi__value">${App.litres(t.fuel_sold_litres)}</div></div>
       <div class="kpi"><div class="kpi__label">Revenue</div><div class="kpi__value">${App.money(t.revenue)}</div></div>
+      <div class="kpi"><div class="kpi__label">Online money today</div><div class="kpi__value">${App.money(d.money_today.online_total)}</div>
+        <div class="kpi__sub">${d.money_today.shifts.map((s) => `${App.esc(s.name)} ${App.money(s.online)}`).join(" + ") || "no shifts yet"}</div></div>
       <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value">${App.money(t.operating_expenses)}</div></div>
       <div class="kpi"><div class="kpi__label">Fuel cost</div><div class="kpi__value">${App.money(t.cost_of_fuel_sold)}</div><div class="kpi__sub">weighted-average cost of litres sold</div></div>
       <div class="kpi ${profit < 0 ? "kpi--loss" : "kpi--profit"}"><div class="kpi__label">${profit < 0 ? "Loss" : "Profit"}</div><div class="kpi__value">${App.money(Math.abs(profit))}</div></div>

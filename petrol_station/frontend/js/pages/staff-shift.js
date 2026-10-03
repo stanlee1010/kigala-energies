@@ -8,6 +8,7 @@ App.run(async () => {
   const page = App.$("#page");
   let data = null;
   let categories = [];
+  let weekChoice = null;
 
   const editable = () => data.shift && ["OPEN", "FLAGGED"].includes(data.shift.status);
 
@@ -67,19 +68,48 @@ App.run(async () => {
     </div>`;
   }
 
-  /** Online money only: the night shift's online money (fixed) + this shift's own. No sales totals. */
+  /** Online money only: the previous shift's online money exactly as its staff typed it (fixed)
+   *  + this shift's own. No sales totals. */
   function onlineViewHtml(s) {
     const v = s.online_view;
     if (!v.previous) return "";
-    return `<div class="card"><h3>Total money online</h3>
+    const typed = (expr, total) => (expr ? `<code>${App.esc(expr.split("+").join(" + "))}</code> = ` : "") +
+      `<strong>${App.money(total)}</strong>`;
+    return `<div class="card"><h3>Online money history</h3>
       <table class="pl-table">
-        <tr><td>Online (${App.esc(v.previous.name.toLowerCase())} shift, ${App.date(v.previous.shift_date)}) <span class="small muted">— fixed</span></td>
+        <tr><td>Previous shift — ${App.esc(v.previous.name)}, ${App.date(v.previous.shift_date)}
+              <span class="small muted">(as written by that shift, fixed)</span><br>${typed(v.previous.online_expression, v.previous.online)}</td>
             <td>${App.money(v.previous.online)}</td></tr>
-        <tr><td>+ Online (this shift)</td><td>${App.money(v.own)}</td></tr>
+        <tr><td>+ This shift<br>${typed(v.own_expression, v.own)}</td><td>${App.money(v.own)}</td></tr>
         <tr class="total"><td>= Total money online</td><td>${App.money(v.total)}</td></tr>
       </table>
       <p class="small muted">This is only a sum of the online money. Your cash above uses only this shift's own online money.</p>
     </div>`;
+  }
+
+  /** "Choose your shift for next week" — the change starts on Monday. */
+  function weekChoiceCard() {
+    const w = weekChoice;
+    if (!w) return document.createComment("no week choice");
+    const n = w.next_week;
+    const card = App.h(`<section class="card ${n.chosen ? "" : "week-choice--ask"}">
+      <div class="card__head"><h2>📅 ${n.chosen ? "Your shift next week" : "Choose your shift for next week"}</h2>
+        <span class="small muted">${App.date(n.start)} – ${App.date(n.end)} · starts Monday</span></div>
+      <p class="small">This week (${App.date(w.this_week.start)} – ${App.date(w.this_week.end)}):
+        <strong>${App.esc(w.this_week.shift || "not set")}</strong>.
+        ${n.chosen ? `Next week you chose <strong>${App.esc(n.shift)}</strong> — you can still change it until Monday.`
+                   : "Which shift do you want to work next week? Tap one:"}</p>
+      <div class="row">${w.shift_types.map((t) => `
+        <button type="button" class="btn btn--lg ${n.chosen_shift_type_id === t.id ? "btn--primary" : ""}" data-week-shift="${t.id}">
+          ${t.ends_next_day ? "🌙" : "☀️"} ${App.esc(t.name)} <span class="small">${t.start_time}–${t.end_time}</span></button>`).join("")}</div>
+    </section>`);
+    App.on(card, "click", "[data-week-shift]", (e, b) => App.run(async () => {
+      const res = await App.put("/api/staff/week-choice", { shift_type_id: Number(b.dataset.weekShift) });
+      App.toast(`Next week (from Monday ${App.date(res.week_start)}) you are on the ${res.shift} shift.`, "ok", 6000);
+      weekChoice = await App.get("/api/staff/week-choice");
+      card.replaceWith(weekChoiceCard());
+    }));
+    return card;
   }
 
   function readingHtml(r) {
@@ -115,11 +145,13 @@ App.run(async () => {
             rows: data.my_shifts }) : ""}
           <div class="form-actions"><a class="btn btn--primary btn--lg" href="/staff/refill.html">Record a fuel refill</a></div>
         </div>`;
+      page.prepend(weekChoiceCard());
       return;
     }
     const s = data.shift;
     const myPumps = s.readings.map((r) => r.pump_name).join(", ") || "All pumps";
     page.innerHTML = `
+      <div id="week-choice-slot"></div>
       <section class="shift-hero">
         <div class="small">MY CURRENT SHIFT ${data.is_current ? "" : "· (not the current time slot)"}</div>
         <h1>${App.esc(App.label(s.shift_type))} shift</h1>
@@ -173,6 +205,8 @@ App.run(async () => {
   }
 
   function wire() {
+    const slot = App.$("#week-choice-slot");
+    if (slot) slot.replaceWith(weekChoiceCard());
     const start = App.$("#start-btn");
     if (start) start.addEventListener("click", () => App.run(async () => {
       const res = await App.post(`/api/shifts/${data.shift.id}/start`);
@@ -263,8 +297,10 @@ App.run(async () => {
     }));
   }
 
-  const [shiftData, { categories: allCategories }] = await Promise.all([App.get("/api/staff/my-shift"), App.get("/api/expense-categories")]);
+  const [shiftData, { categories: allCategories }, week] = await Promise.all([
+    App.get("/api/staff/my-shift"), App.get("/api/expense-categories"), App.get("/api/staff/week-choice")]);
   categories = allCategories;
   data = shiftData;
+  weekChoice = week;
   render();
 });

@@ -254,6 +254,39 @@ def add_station():
     return jsonify({"station": _station_dict(station)}), 201
 
 
+@bp.post("/stations/<int:station_id>/<any(remove, restore):action>")
+@director_required
+def remove_or_restore_station(station_id, action):
+    """Remove a location from use (archived, never deleted: its sales, money and audit history are kept)
+    or restore it exactly as it was. Its staff cannot log in while it is removed."""
+    me = current_user()
+    station = db.session.get(Station, station_id)
+    if station is None:
+        raise ApiError("Station not found", 404)
+    reason = optional_text(body(), "reason", 500)
+    if action == "remove":
+        if not station.is_active:
+            raise ApiError("That station is already removed")
+        if Station.query.filter_by(is_active=True).count() <= 1:
+            raise ApiError("This is the last station — add another one before removing it")
+        station.is_active = False
+        # Managers working on it move to another of their stations.
+        from ..services.stations import accessible_stations
+        for manager in User.query.filter_by(role="MANAGER", station_id=station.id).all():
+            others = accessible_stations(manager)
+            if others:
+                manager.station_id = others[0].id
+    else:
+        if station.is_active:
+            raise ApiError("That station is already in use")
+        station.is_active = True
+    audit.log(station.id, me.id, f"DIRECTOR {'REMOVED' if action == 'remove' else 'RESTORED'} STATION", "stations",
+              station.id, {"is_active": action != "remove"}, {"is_active": action == "restore", "name": station.name},
+              reason=reason)
+    db.session.commit()
+    return jsonify({"station": _station_dict(station)})
+
+
 @bp.put("/stations/<int:station_id>")
 @director_required
 def update_station(station_id):

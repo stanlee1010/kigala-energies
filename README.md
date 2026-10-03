@@ -24,7 +24,7 @@ You can start it on its own with `start-training.bat`.
 - It is **for staff only**; managers use the real system.
 - It uses its own database (`database/training.db`), so nothing done there affects the real station.
 - It **copies the real station's shift pattern, pumps, tanks and prices** (reading the real database without changing it). It rebuilds itself when those change.
-- It creates **one practice attendant per shift** (for example `demo.morning` and `demo.night`). The password for all of them is **`Demo1234`**.
+- It creates **one practice attendant per shift** (for example `demo.morning` and `demo.night`). Trainees just tap their shift on the login page; the server signs them in. Practice accounts have random passwords nobody knows, so no password is ever stored or typed in the browser.
 - Each trainee's clock is paused inside their own shift, so the practice shift never runs out.
 - A yellow **TRAINING PORTAL** bar on every page has two buttons:
   - **Training guide** opens `/training.html`, with 7 staff lessons, each with a "Try it" button.

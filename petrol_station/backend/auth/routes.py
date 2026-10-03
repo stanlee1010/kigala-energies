@@ -7,7 +7,7 @@ from ..models import Station, User, utcnow
 from ..routes.common import ApiError, body, require_text, validate_password
 from ..services import audit, ratelimit
 from ..services.audit import client_ip
-from . import current_user, login_required, login_user
+from . import current_user, login_required, login_user, station_in_use
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -78,6 +78,8 @@ def login():
         raise ApiError("Incorrect username or password", 401)
     if not user.is_active:
         raise ApiError("This account has been disabled. Please contact the manager.", 403)
+    if not station_in_use(user):
+        raise ApiError("Your station has been removed by the director. Please contact the manager.", 403)
 
     user.failed_login_count = 0
     user.locked_until = None
@@ -105,7 +107,7 @@ def me():
 def change_password():
     user = current_user()
     if current_app.config.get("DEMO_MODE"):
-        raise ApiError("In the training portal the practice passwords stay the same so everyone can use them. "
+        raise ApiError("In the training portal you sign in by choosing your shift, so there is no password to change. "
                        "In the real system you will be asked to set your own password at first login.", 403)
     data = body()
     if not user.check_password(data.get("current_password") or ""):

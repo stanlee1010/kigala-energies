@@ -184,6 +184,15 @@ code { font-family: Consolas, "Courier New", monospace; font-size: .9em; }
 .training-banner strong { letter-spacing: .06em; }
 .training-banner .btn { background: rgba(255, 255, 255, .85); color: #422006; border-color: #d97706; }
 
+/* Breadcrumbs: Home › this page */
+.breadcrumbs { font-size: .85rem; color: var(--muted); margin-bottom: .75rem; }
+.breadcrumbs a { color: var(--brand); }
+.breadcrumbs [aria-current] { color: var(--text); font-weight: 600; }
+.breadcrumbs--shell { margin: 0; padding: .75rem 1.25rem 0; max-width: 1400px; }
+@media (max-width: 960px) { .breadcrumbs--shell { padding: .6rem 1rem 0; } }
+
+.site-footer { margin-top: 1rem; font-size: .8rem; text-align: center; }
+
 /* Login bot trap: off-screen for people, still present for bots that fill every field. */
 .hp-field { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 

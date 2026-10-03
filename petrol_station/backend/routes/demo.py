@@ -9,9 +9,12 @@ import urllib.request
 
 from flask import Blueprint, current_app, jsonify, request
 
-from ..models import Station
-from ..services import demo
-from .common import ApiError
+from ..auth import login_user
+from ..extensions import db
+from ..models import Station, utcnow
+from ..services import audit, demo, ratelimit
+from ..services.audit import client_ip
+from .common import ApiError, body, require_text
 
 bp = Blueprint("demo", __name__, url_prefix="/api/demo")
 TRAINING_PORT = 8001
@@ -46,6 +49,29 @@ def info():
     host = request.host.split(":")[0]
     return jsonify({"demo": False, "training_running": running,
                     "training_url": f"{request.scheme}://{host}:{TRAINING_PORT}/" if running else None})
+
+
+@bp.post("/login")
+def login():
+    """Sign a trainee in as the practice attendant for the shift they chose.
+
+    The practice passwords are random and known to nobody, so the browser never holds or
+    sends a password. This only works on the training portal and only for practice staff.
+    """
+    _require_demo()
+    wait = ratelimit.hit(f"login:{client_ip()}", current_app.config["LOGIN_RATE_LIMIT"],
+                         current_app.config["LOGIN_RATE_WINDOW_SECONDS"])
+    if wait:
+        raise ApiError(f"Too many login attempts from this device. Try again in {max(1, wait // 60)} minute(s).", 429)
+    user = demo.practice_account(require_text(body(), "username", max_len=60).lower())
+    if user is None:
+        raise ApiError("Choose one of the practice shifts shown on the page", 404)
+    from ..auth.routes import user_payload
+    user.last_login_at = utcnow()
+    audit.log(user.station_id, user.id, "USER LOGGED IN", "users", user.id, reason="training portal practice account")
+    db.session.commit()
+    login_user(user)
+    return jsonify({"user": user_payload(user)})
 
 
 @bp.post("/reset")

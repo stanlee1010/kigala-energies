@@ -20,10 +20,10 @@ App.run(async () => {
       <button class="tab active" data-g="daily">Daily</button><button class="tab" data-g="weekly">Weekly</button>
       <button class="tab" data-g="monthly">Monthly</button><button class="tab" data-g="yearly">Yearly</button></div>
     <section class="chart-grid">
-      <div class="card"><h3>Sales</h3><div class="chart-box"><canvas id="c-sales" aria-label="Sales chart"></canvas></div></div>
-      <div class="card"><h3>Profit / loss</h3><div class="chart-box"><canvas id="c-profit" aria-label="Profit chart"></canvas></div></div>
-      <div class="card"><h3>Fuel sold (litres)</h3><div class="chart-box"><canvas id="c-fuel" aria-label="Fuel sold chart"></canvas></div></div>
-      <div class="card"><h3>Expenses</h3><div class="chart-box"><canvas id="c-exp" aria-label="Expenses chart"></canvas></div></div>
+      <div class="card"><h3>Sales</h3><div class="chart-box"><canvas role="img" id="c-sales" aria-label="Sales chart (the same figures are in the table below)"></canvas></div></div>
+      <div class="card"><h3>Profit / loss</h3><div class="chart-box"><canvas role="img" id="c-profit" aria-label="Profit and loss chart (the same figures are in the table below)"></canvas></div></div>
+      <div class="card"><h3>Fuel sold (litres)</h3><div class="chart-box"><canvas role="img" id="c-fuel" aria-label="Fuel sold chart (the same figures are in the table below)"></canvas></div></div>
+      <div class="card"><h3>Expenses</h3><div class="chart-box"><canvas role="img" id="c-exp" aria-label="Expenses chart (the same figures are in the table below)"></canvas></div></div>
     </section>
     <details class="card"><summary><strong>Show chart data as a table</strong></summary><div id="chart-table" style="margin-top:.75rem"></div></details>`;
 

@@ -75,7 +75,7 @@
   App.api("GET", "/api/demo/info", undefined, { allow401: true }).then((info) => {
     const where = App.$("#where");
     if (info.demo) {
-      where.innerHTML = '<div class="banner__icon">🎓</div><div class="banner__body"><h2>You are in the training portal</h2><p>Use the practice account for your shift — password <strong>Demo1234</strong>. Use <em>Reset training data</em> in the yellow bar to start fresh.</p></div>';
+      where.innerHTML = '<div class="banner__icon">🎓</div><div class="banner__body"><h2>You are in the training portal</h2><p>On the login page just tap the shift you want to practise — no password needed. Use <em>Reset training data</em> in the yellow bar to start fresh.</p></div>';
     } else if (info.training_url) {
       base = info.training_url.replace(/\/$/, "");
       where.innerHTML = `<div class="banner__icon">🎓</div><div class="banner__body"><h2>Practise in the training portal</h2><p>"Try it" opens the training portal at <a href="${App.esc(info.training_url)}">${App.esc(info.training_url)}</a> — not the real station.</p></div>`;

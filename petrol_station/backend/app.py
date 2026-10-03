@@ -109,6 +109,8 @@ def create_app(config_class=Config):
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        # A private tool: search engines must not list it (see also /robots.txt and the page meta tags).
+        response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         response.headers.setdefault("Permissions-Policy",
                                     "geolocation=(), microphone=(), payment=(), usb=(), camera=(self)")
@@ -155,14 +157,16 @@ def create_app(config_class=Config):
         if app.config["DEMO_MODE"]:
             from .models import Station
             from .services.clock import paused_at
-            from .services.demo import needs_rebuild, reset, seed
+            from .services.demo import needs_rebuild, reset, scramble_passwords, seed
             if created:
                 seed()
             else:
                 station_id = Station.query.first().id
                 if paused_at(station_id) is None or needs_rebuild(station_id):
                     reset()   # older practice data, or the real station's shifts/pumps/tanks changed
-            app.logger.warning("Training portal: practice data ready (password for all practice accounts: Demo1234)")
+                scramble_passwords()
+                db.session.commit()
+            app.logger.warning("Training portal: practice data ready (trainees sign in by choosing their shift)")
         elif created:
             app.logger.warning("Created station and initial manager account '%s' - change the password at first login.",
                                app.config["INITIAL_MANAGER_USERNAME"])

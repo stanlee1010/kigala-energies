@@ -10,6 +10,7 @@ App.run(async () => {
     <div class="page-head"><div><h1>Shift management</h1>
       <p>Shifts are created automatically every day from your shift pattern, and your regular staff are put on them.</p></div></div>
     <section class="card" id="pattern"></section>
+    <section class="card" id="week-plan"></section>
     <section class="card" id="roster"></section>
     <div class="card">
       <h2>Create shifts for a date range</h2>
@@ -106,6 +107,45 @@ App.run(async () => {
       message: three ? "Morning 06:00–14:00, Afternoon 14:00–22:00, Night 22:00–06:00. Upcoming shifts that have not started are re-timed; staff keep their regular shift where it still exists."
                      : "Morning 06:00–18:00 and Night 18:00–06:00. Upcoming Afternoon shifts that have not started are cancelled." }))) return;
     await patternChanged(await App.post("/api/shift-types/preset", { preset: b.dataset.preset }), "Shift pattern applied.");
+  }));
+
+  /* ------------------------------------------ weekly choices (from Monday) */
+
+  let planWeek = "";
+  async function loadWeekPlan() {
+    const d = await App.get("/api/roster/week-choices" + App.qs({ week: planWeek }));
+    planWeek = d.week_start;
+    const choices = [{ id: "", name: "— choose —" }, ...d.shift_types];
+    App.$("#week-plan").innerHTML = `
+      <div class="card__head"><h2>📅 Shifts for the week</h2>
+        <div class="row"><button class="btn btn--sm" data-week-move="-7">◀</button>
+          <strong>${App.date(d.week_start)} – ${App.date(d.week_end)}</strong>
+          <button class="btn btn--sm" data-week-move="7">▶</button></div></div>
+      <p class="small muted">Staff choose their shift for next week on their phone; the change starts on Monday.
+        Anyone who has not chosen works their regular shift. You can also choose for them here.</p>
+      <div class="kpis" style="margin-bottom:.75rem">${Object.entries(d.counts).map(([name, n]) =>
+        `<div class="kpi"><div class="kpi__label">${App.esc(name)}</div><div class="kpi__value ${name === "Not set" && n ? "text-warn" : ""}">${n}</div></div>`).join("")}</div>
+      ${App.table({
+        columns: [
+          { key: "full_name", label: "Staff", render: (u) => `<strong>${App.esc(u.full_name)}</strong>` },
+          { key: "shift", label: "Shift that week", render: (u) => u.shift
+              ? `${App.esc(u.shift)} ${u.chosen ? App.badge("ok", "chosen by staff") : '<span class="badge">regular shift</span>'}`
+              : '<span class="text-warn">Not chosen yet</span>' },
+          { key: "set", label: "Set for this week", render: (u) => `<select class="input input--sm" data-week-user="${u.id}">
+              ${App.options(choices, "id", "name", "")}</select>` },
+        ], rows: d.staff, empty: "No active staff at this station." })}`;
+  }
+  App.on(page, "click", "[data-week-move]", (e, b) => {
+    const dt = new Date(planWeek + "T00:00:00Z");
+    dt.setUTCDate(dt.getUTCDate() + Number(b.dataset.weekMove));
+    planWeek = dt.toISOString().slice(0, 10);
+    App.run(loadWeekPlan);
+  });
+  App.on(page, "change", "[data-week-user]", (e, sel) => App.run(async () => {
+    if (!sel.value) return;
+    const r = await App.put(`/api/roster/week-choices/${sel.dataset.weekUser}`, { week: planWeek, shift_type_id: Number(sel.value) });
+    App.toast(`Set to ${r.shift} for the week of ${App.date(r.week_start)}.`, "ok");
+    await Promise.all([loadWeekPlan(), loadList()]);
   }));
 
   /* --------------------------------------------------- regular roster */
@@ -363,6 +403,6 @@ App.run(async () => {
     });
   }
 
-  await Promise.all([loadRoster(), loadList()]);
+  await Promise.all([loadRoster(), loadList(), loadWeekPlan()]);
   if (params.get("shift")) openShift(params.get("shift"));
 });

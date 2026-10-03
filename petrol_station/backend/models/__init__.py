@@ -6,7 +6,7 @@ from .fuel import FuelPrice, FuelType, Pump, StockThreshold, Supplier, Tank
 from .refill import (ADJUSTMENT_TYPES, STAFF_EDITABLE_REFILL_STATUSES, STOCK_REFILL_STATUSES,
                      FuelRefill, RefillConfirmation, StockAdjustment)
 from .shift import (DEFAULT_SHIFT_DEFINITIONS, FuelStock, PumpReading, Shift, ShiftCash, ShiftDefinition,
-                    ShiftDeposit, ShiftStaff, ShiftStaffPump)
+                    ShiftDeposit, ShiftStaff, ShiftStaffPump, WeeklyShiftChoice)
 from .station import ROLES, Station, SystemSetting, User, UserStation
 
 __all__ = [
@@ -15,5 +15,5 @@ __all__ = [
     "Alert", "Attachment", "AuditLog", "Expense", "ExpenseCategory", "FuelPrice", "FuelRefill",
     "FuelStock", "FuelType", "Pump", "PumpReading", "RefillConfirmation", "Report",
     "ReportingPeriod", "Shift", "ShiftCash", "ShiftDefinition", "ShiftDeposit", "ShiftStaff", "ShiftStaffPump", "Station",
-    "StockAdjustment", "StockThreshold", "Supplier", "SystemSetting", "Tank", "User", "UserStation", "utcnow",
+    "StockAdjustment", "StockThreshold", "Supplier", "SystemSetting", "Tank", "User", "UserStation", "WeeklyShiftChoice", "utcnow",
 ]

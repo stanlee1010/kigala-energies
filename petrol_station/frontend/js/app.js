@@ -215,7 +215,8 @@
       columns: [
         { key: "name", label: "Shift", render: (s) => `${App.esc(s.name)} <span class="small muted">${App.label(s.status)}</span>` },
         { key: "total", label: "Total (sales)", cls: "num", render: (s) => App.money(s.total) },
-        { key: "online", label: "− Its online", cls: "num", render: (s) => App.money(s.online) },
+        { key: "online", label: "− Its online (as typed)", cls: "num", render: (s) => App.money(s.online) +
+            (s.online_expression ? `<div class="small muted">${App.esc(s.online_expression.split("+").join(" + "))}</div>` : "") },
         { key: "total_cash", label: "= Total cash", cls: "num", render: (s) => `<strong>${App.money(s.total_cash)}</strong>` },
       ],
       rows: d.shifts, cards: false, empty: "No shifts for this day yet.",
@@ -350,18 +351,26 @@
     const switcher = App.user.role === "MANAGER" && stations.length > 1
       ? `<label class="station-switch">📍 <select id="station-switch" class="input input--sm" aria-label="Station">
            ${App.options(stations, "id", "name", App.user.station_id)}</select></label>` : "";
+    const isHere = (href) => path + location.search === href || (path === href && !location.search);
     const nav = items.map(([href, icon, label, counter]) => `
-      <li><a href="${href}" class="${path + location.search === href || (path === href && !location.search) ? "active" : ""}">
-        <span class="nav__icon">${icon}</span>${label}${counter ? `<span class="nav__count hidden" data-counter="${counter}"></span>` : ""}
+      <li><a href="${href}" class="${isHere(href) ? "active" : ""}" ${isHere(href) ? 'aria-current="page"' : ""}>
+        <span class="nav__icon" aria-hidden="true">${icon}</span>${label}${counter ? `<span class="nav__count hidden" data-counter="${counter}"></span>` : ""}
       </a></li>`).join("");
+    // Breadcrumbs: Home › this page (the first menu item is each role's home).
+    const [homeHref, , homeLabel] = items[0] || [App.home(App.user), "", "Home"];
+    const current = items.find(([href]) => isHere(href));
+    const crumbs = current && current[0] === homeHref
+      ? `<span aria-current="page">${App.esc(homeLabel)}</span>`
+      : `<a href="${homeHref}">${App.esc(homeLabel)}</a> <span aria-hidden="true">›</span> <span aria-current="page">${App.esc(current ? current[2] : title)}</span>`;
     shell.insertBefore(App.h(`
       <aside class="sidebar" aria-label="Main navigation">
-        <div class="sidebar__brand"><div class="sidebar__logo">⛽</div>
+        <div class="sidebar__brand"><div class="sidebar__logo" role="img" aria-label="Kigala Energies fuel pump logo">⛽</div>
           <div>${App.user.role === "DIRECTOR" ? "All locations" : App.esc(App.station.name)}
             <div class="sidebar__station">${App.user.role === "DIRECTOR" ? "Director portal" : "Petrol Station Management"}</div></div></div>
         <ul class="nav">${nav}
-          <li><a href="/change-password.html"><span class="nav__icon">🔑</span>Change password</a></li>
-          ${App.user.role === "STAFF" ? '<li><a href="/training.html" target="_blank" rel="noopener"><span class="nav__icon">📘</span>Training guide</a></li>' : ""}
+          <li><a href="/change-password.html"><span class="nav__icon" aria-hidden="true">🔑</span>Change password</a></li>
+          ${App.user.role === "STAFF" ? '<li><a href="/training.html" target="_blank" rel="noopener"><span class="nav__icon" aria-hidden="true">📘</span>Training guide</a></li>' : ""}
+          <li><a href="/privacy.html"><span class="nav__icon" aria-hidden="true">🔒</span>Privacy policy</a></li>
         </ul>
         <div class="sidebar__user"><strong>${App.esc(App.user.full_name)}</strong>
           ${App.esc(App.user.username)} · ${App.label(App.user.role)}
@@ -377,6 +386,9 @@
         <div class="topbar__clock"><strong id="clock-time">--:--:--</strong><span id="clock-date"></span></div>
       </header>`), main.firstChild);
     document.title = `${title} · ${App.user.role === "DIRECTOR" ? "Director" : App.station.name}`;
+    // Placed just above the content area, because pages re-draw their content area when they load.
+    const content = App.$(".content", main);
+    if (content) content.before(App.h(`<nav class="breadcrumbs breadcrumbs--shell" aria-label="Breadcrumb">${crumbs}</nav>`));
     const pick = App.$("#station-switch");
     if (pick) pick.addEventListener("change", () => App.run(async () => {
       await App.post("/api/auth/station", { station_id: Number(pick.value) });

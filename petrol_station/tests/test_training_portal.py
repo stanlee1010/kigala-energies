@@ -1,5 +1,7 @@
 """Training portal: staff-only practice, one trainee per shift, paused clock, isolation from the real system."""
+import re
 import time
+from pathlib import Path
 
 import pytest
 
@@ -7,7 +9,7 @@ from backend.app import create_app
 from backend.config import DemoTestConfig
 from backend.extensions import db
 
-from .conftest import login
+from .conftest import browser_client, login
 
 
 @pytest.fixture()
@@ -29,9 +31,35 @@ def test_one_practice_attendant_per_shift_and_no_manager(demo_app):
     assert r.status_code == 403 and "staff practice only" in r.json["error"]
 
 
+def trainee(demo_app, username):
+    """Sign in the way the training login page does: by shift, with no password."""
+    client = browser_client(demo_app)
+    r = client.post("/api/demo/login", json={"username": username})
+    assert r.status_code == 200, r.json
+    return client
+
+
+def test_trainees_sign_in_without_any_password_in_the_browser(demo_app):
+    info = demo_app.test_client().get("/api/demo/info").json
+    assert all("password" not in a for a in info["accounts"])
+    client = browser_client(demo_app)
+    # practice passwords are random: nobody can type one, and the old shared one no longer works
+    assert client.post("/api/auth/login", json={"username": "demo.morning", "password": "Demo1234"}).status_code == 401
+    for name in ("training.system", "manager", "director", "nobody"):
+        assert client.post("/api/demo/login", json={"username": name}).status_code == 404
+    assert trainee(demo_app, "demo.morning").get("/api/auth/me").json["user"]["username"] == "demo.morning"
+
+
+def test_no_password_is_written_in_the_frontend():
+    front = Path(__file__).resolve().parents[1] / "frontend"
+    for path in list(front.rglob("*.js")) + list(front.rglob("*.html")):
+        text = path.read_text(encoding="utf-8")
+        assert "Demo1234" not in text and not re.search(r"password\s*[:=]\s*[\"'][^\"']+[\"']", text), path.name
+
+
 def test_each_trainee_practises_their_own_shift_with_a_paused_clock(demo_app):
-    morning = login(demo_app, "demo.morning", "Demo1234")
-    night = login(demo_app, "demo.night", "Demo1234")
+    morning = trainee(demo_app, "demo.morning")
+    night = trainee(demo_app, "demo.night")
     t1 = morning.get("/api/time").json
     assert t1["paused"] and t1["now"].endswith("T09:00:00") and t1["current_shift_type"] == "MORNING"
     t2 = night.get("/api/time").json
@@ -48,21 +76,22 @@ def test_each_trainee_practises_their_own_shift_with_a_paused_clock(demo_app):
     assert started["stock"] == [] and started["tanks"] == []                  # staff never see tanks
     assert night.get("/api/staff/my-shift").json["shift"]["shift_type"] == "NIGHT"
 
-    r = morning.post("/api/auth/change-password", json={"current_password": "Demo1234", "new_password": "Other1234"})
+    r = morning.post("/api/auth/change-password", json={"current_password": "x", "new_password": "Other1234"})
     assert r.status_code == 403
 
 
 def test_reset_rebuilds_practice_data(demo_app):
-    morning = login(demo_app, "demo.morning", "Demo1234")
+    morning = trainee(demo_app, "demo.morning")
     shift = morning.get("/api/staff/my-shift").json["shift"]
     morning.post(f"/api/shifts/{shift['id']}/start")
     assert demo_app.test_client().post("/api/demo/reset", json={}).status_code == 200
-    morning = login(demo_app, "demo.morning", "Demo1234")
+    morning = trainee(demo_app, "demo.morning")
     assert morning.get("/api/staff/my-shift").json["shift"]["status"] == "SCHEDULED"
 
 
 def test_real_system_refuses_training_actions(app, manager):
     assert manager.post("/api/demo/reset").status_code == 403
+    assert browser_client(app).post("/api/demo/login", json={"username": "manager"}).status_code == 403
     info = app.test_client().get("/api/demo/info").json
     assert info["demo"] is False and "accounts" not in info
     assert manager.get("/api/time").json["paused"] is False          # the real clock always runs
