@@ -244,7 +244,7 @@ App.run(async () => {
 
       <section><h3>Assigned staff</h3>
         ${App.table({ columns: [
-          { key: "full_name", label: "Staff", render: (a) => App.esc(a.full_name) + (a.source === "ROSTER" ? ' <span class="badge">regular</span>' : "") },
+          { key: "full_name", label: "Staff", render: (a) => App.esc(a.full_name) + (a.source === "ROSTER" ? ' <span class="badge">regular</span>' : a.source === "SELF" ? ' <span class="badge">started it</span>' : "") },
           { key: "pumps", label: "Pumps", render: (a) => App.esc(a.pumps.join(", ") || "All pumps") },
           { key: "x", label: "", cls: "actions", render: (a) => locked ? "" : `<button class="btn btn--sm" data-unassign="${a.user_id}">Remove</button>` },
         ], rows: s.staff, empty: "Nobody assigned yet." })}

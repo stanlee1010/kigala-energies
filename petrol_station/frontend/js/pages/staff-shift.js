@@ -8,7 +8,6 @@ App.run(async () => {
   const page = App.$("#page");
   let data = null;
   let categories = [];
-  let weekChoice = null;
 
   const editable = () => data.shift && ["OPEN", "FLAGGED"].includes(data.shift.status);
 
@@ -87,31 +86,6 @@ App.run(async () => {
     </div>`;
   }
 
-  /** "Choose your shift for next week" — the change starts on Monday. */
-  function weekChoiceCard() {
-    const w = weekChoice;
-    if (!w) return document.createComment("no week choice");
-    const n = w.next_week;
-    const card = App.h(`<section class="card ${n.chosen ? "" : "week-choice--ask"}">
-      <div class="card__head"><h2>📅 ${n.chosen ? "Your shift next week" : "Choose your shift for next week"}</h2>
-        <span class="small muted">${App.date(n.start)} – ${App.date(n.end)} · starts Monday</span></div>
-      <p class="small">This week (${App.date(w.this_week.start)} – ${App.date(w.this_week.end)}):
-        <strong>${App.esc(w.this_week.shift || "not set")}</strong>.
-        ${n.chosen ? `Next week you chose <strong>${App.esc(n.shift)}</strong> — you can still change it until Monday.`
-                   : "Which shift do you want to work next week? Tap one:"}</p>
-      <div class="row">${w.shift_types.map((t) => `
-        <button type="button" class="btn btn--lg ${n.chosen_shift_type_id === t.id ? "btn--primary" : ""}" data-week-shift="${t.id}">
-          ${t.ends_next_day ? "🌙" : "☀️"} ${App.esc(t.name)} <span class="small">${t.start_time}–${t.end_time}</span></button>`).join("")}</div>
-    </section>`);
-    App.on(card, "click", "[data-week-shift]", (e, b) => App.run(async () => {
-      const res = await App.put("/api/staff/week-choice", { shift_type_id: Number(b.dataset.weekShift) });
-      App.toast(`Next week (from Monday ${App.date(res.week_start)}) you are on the ${res.shift} shift.`, "ok", 6000);
-      weekChoice = await App.get("/api/staff/week-choice");
-      card.replaceWith(weekChoiceCard());
-    }));
-    return card;
-  }
-
   function readingHtml(r) {
     const dis = editable() ? "" : "disabled";
     const mismatch = r.expected_opening_meter != null && Number(r.expected_opening_meter) !== Number(r.opening_meter) && r.opening_recorded_at;
@@ -137,21 +111,36 @@ App.run(async () => {
 
   function render() {
     if (!data.shift) {
+      const cur = data.current_shift, prev = data.previous_shift;
+      const hours = `${App.localDateTime(cur.scheduled_start).slice(11)} – ${App.localDateTime(cur.scheduled_end).slice(11)}`;
       page.innerHTML = `
-        <div class="card"><h1>No shift right now</h1>
-          <p>You are not assigned to the current shift (${App.esc(data.current_shift.label)}). Ask the manager to assign you.</p>
-          ${data.my_shifts.length ? "<h3>Your upcoming shifts</h3>" + App.table({
-            columns: [{ key: "label", label: "Shift" }, { key: "status", label: "Status", render: (r) => App.badge(r.status) }],
-            rows: data.my_shifts }) : ""}
-          <div class="form-actions"><a class="btn btn--primary btn--lg" href="/staff/refill.html">Record a fuel refill</a></div>
+        <div class="card center start-shift">
+          <div class="small muted">SHIFT RUNNING NOW</div>
+          <h1>${App.esc(cur.label)}</h1>
+          <p>🕒 ${App.esc(hours)}${cur.staff.length ? ` · On shift: <strong>${App.esc(cur.staff.join(", "))}</strong>` : ""}</p>
+          ${prev ? `<p class="small muted">Previous shift: ${App.esc(prev.label)} — ${App.label(prev.status)}${prev.staff.length ? ` (${App.esc(prev.staff.join(", "))})` : ""}.
+            Your opening meters start from its closing readings.</p>` : ""}
+          ${cur.can_start
+            ? `<button class="btn btn--primary btn--lg btn--block" id="take-btn">▶ START SHIFT</button>
+               <p class="small muted">${cur.status === "OPEN" ? "This shift is already open — you will join it." : "You will be put on this shift and it will open."}</p>`
+            : `<p>The ${App.esc(cur.label)} shift is ${App.label(cur.status).toLowerCase()}. Ask the manager if you need to work on it.</p>`}
+        </div>
+        <div class="card center">
+          <a class="btn btn--lg btn--block" href="/staff/refill.html">🚚 Record a fuel refill</a>
         </div>`;
-      page.prepend(weekChoiceCard());
+      const take = App.$("#take-btn");
+      if (take) take.addEventListener("click", () => App.run(async () => {
+        const res = await App.post("/api/staff/start-shift");
+        data.shift = res.shift;
+        data.is_current = true;
+        App.toast("Shift started. Enter your opening readings.", "ok");
+        render();
+      }));
       return;
     }
     const s = data.shift;
     const myPumps = s.readings.map((r) => r.pump_name).join(", ") || "All pumps";
     page.innerHTML = `
-      <div id="week-choice-slot"></div>
       <section class="shift-hero">
         <div class="small">MY CURRENT SHIFT ${data.is_current ? "" : "· (not the current time slot)"}</div>
         <h1>${App.esc(App.label(s.shift_type))} shift</h1>
@@ -205,8 +194,6 @@ App.run(async () => {
   }
 
   function wire() {
-    const slot = App.$("#week-choice-slot");
-    if (slot) slot.replaceWith(weekChoiceCard());
     const start = App.$("#start-btn");
     if (start) start.addEventListener("click", () => App.run(async () => {
       const res = await App.post(`/api/shifts/${data.shift.id}/start`);
@@ -297,10 +284,9 @@ App.run(async () => {
     }));
   }
 
-  const [shiftData, { categories: allCategories }, week] = await Promise.all([
-    App.get("/api/staff/my-shift"), App.get("/api/expense-categories"), App.get("/api/staff/week-choice")]);
+  const [shiftData, { categories: allCategories }] = await Promise.all([
+    App.get("/api/staff/my-shift"), App.get("/api/expense-categories")]);
   categories = allCategories;
   data = shiftData;
-  weekChoice = week;
   render();
 });

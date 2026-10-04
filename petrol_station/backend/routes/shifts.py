@@ -240,16 +240,58 @@ def my_shift():
         mine.append(cur)
     if active is None:
         active = next((s for s in mine if s.id == cur.id), None)
-    if active is None:
-        active = next((s for s in mine if s.status == "SCHEDULED" and s.scheduled_start >= cur.scheduled_start), None)
+    # Not on the shift that is running now: the time of day decides, so offer "Start shift" for it
+    # (see start_current_shift) instead of showing a later shift from the roster.
     upcoming = [{"id": s.id, "label": s.label, "status": s.status, "scheduled_start": s.scheduled_start.isoformat()}
                 for s in mine if s.shift_date >= today]
+    prev = previous_shift(cur)
     return jsonify({
         "shift": shift_detail(active, me) if active else None,
         "is_current": bool(active and active.id == cur.id),
-        "current_shift": {"id": cur.id, "label": cur.label, "shift_type": cur.shift_type},
+        "current_shift": {"id": cur.id, "label": cur.label, "shift_type": cur.shift_type, "status": cur.status,
+                          "scheduled_start": cur.scheduled_start.isoformat(),
+                          "scheduled_end": cur.scheduled_end.isoformat(),
+                          "staff": [a.user.full_name for a in cur.staff],
+                          "can_start": active is None and not me.is_manager and cur.status in ("SCHEDULED", "OPEN")},
+        "previous_shift": {"label": prev.label, "status": prev.status,
+                           "staff": [a.user.full_name for a in prev.staff]} if prev else None,
         "my_shifts": upcoming,
     })
+
+
+@bp.post("/staff/start-shift")
+@login_required
+def start_current_shift():
+    """Staff press "Start shift": they join the shift that is running now (by the server clock).
+
+    The first person opens it; anyone after that joins the open shift. The assignment is
+    SELF, so roster changes never move it.
+    """
+    me = current_user()
+    if me.is_manager:
+        raise ApiError("Managers assign shifts on the Shifts page", 403)
+    cur = current_shift(me.station_id)
+    busy = (db.session.query(Shift).join(ShiftStaff, ShiftStaff.shift_id == Shift.id)
+            .filter(ShiftStaff.user_id == me.id, Shift.station_id == me.station_id, Shift.id != cur.id,
+                    Shift.status.in_(STAFF_EDITABLE)).order_by(*NEWEST_FIRST).first())
+    if busy is not None:
+        raise ApiError(f"Please submit your {busy.label} shift before starting a new one", 409)
+    if cur.status not in ("SCHEDULED", "OPEN"):
+        raise ApiError(f"The {cur.label} shift has already been {cur.status.lower()}. "
+                       "Ask the manager if you need to work on it.", 409)
+    joined = _assignment(cur, me.id) is None
+    if joined:
+        cur.staff.append(ShiftStaff(user_id=me.id, assigned_by=me.id, source="SELF"))
+    if cur.status == "SCHEDULED":
+        cur.status, cur.started_at, cur.opened_by = "OPEN", utcnow(), me.id
+        action = "STAFF OPENED SHIFT"
+    else:
+        action = "STAFF JOINED SHIFT"
+    _prepare_shift(cur, me.id)
+    audit.log(me.station_id, me.id, action, "shifts", cur.id, None,
+              {"status": cur.status, "staff": me.full_name, "self_assigned": joined})
+    db.session.commit()
+    return jsonify({"shift": shift_detail(cur, me)})
 
 
 # --------------------------------------------------------------- assignment

@@ -90,7 +90,6 @@
 .checklist li.done { color: var(--muted); }
 
 /* ------------------------------------------------- weekly shift choice */
-.week-choice--ask { border: 2px solid var(--accent); background: var(--warn-soft); }
 
 /* -------------------------------------------------------- training guide */
 

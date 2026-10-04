@@ -85,7 +85,8 @@ class ShiftStaff(SerializerMixin, db.Model):
     assigned_role = db.Column(db.String(40), nullable=False, default="PUMP_ATTENDANT")
     assigned_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     assigned_by = db.Column(db.Integer, db.ForeignKey("users.id"))
-    # ROSTER = added automatically from the staff member's regular shift; MANUAL = chosen for this day.
+    # ROSTER = added automatically from the staff member's regular shift; MANUAL = chosen for this day;
+    # SELF = the staff member pressed "Start shift" for the shift running now.
     source = db.Column(db.String(10), nullable=False, default="MANUAL")
 
     user = db.relationship("User", foreign_keys=[user_id], lazy="joined")
