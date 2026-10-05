@@ -45,17 +45,7 @@ App.run(async () => {
       </div>
       <p class="reading-result"><span>= <strong id="online-preview">${App.money(m.online)}</strong></span></p>
 
-      <h3 style="margin-top:1rem">Expenses paid from the cash this shift</h3>
-      ${App.table({
-        columns: [
-          { key: "category", label: "Category" },
-          { key: "description", label: "Description" },
-          { key: "amount", label: "Amount", cls: "num", render: (e) => App.money(e.amount) },
-          { key: "status", label: "Status", render: (e) => App.badge(e.status) },
-          { key: "a", label: "", cls: "actions", render: (e) => e.status === "PENDING" && e.entered_by === App.user.id
-            ? `<button class="btn btn--sm" data-edit-expense="${e.id}">Edit</button>` : "" },
-        ], rows: m.expense_items, empty: "No expenses this shift.", cards: false })}
-      ${editable() ? '<div class="form-actions"><button class="btn btn--lg" id="expense-add">+ Add expense</button></div>' : ""}
+      <div id="exp-sheet" style="margin-top:1rem"></div>
 
       <table class="pl-table" style="margin-top:1rem">
         <tr><td>Total (fuel sales)</td><td>${App.money(m.total)}</td></tr>
@@ -251,27 +241,18 @@ App.run(async () => {
       render();
     }));
 
-    const openExpense = (expense) => {
-      const form = App.expenseForm(expense, categories);
-      form.appendChild(App.h('<p class="small muted">Paid from the shift\'s cash. It is taken off the balance and sent to the manager for approval. You can edit it until the manager decides.</p>'));
-      App.modal({ title: expense ? "Edit expense" : "Add expense", body: form, actions: [{ label: "Cancel" }, {
-        label: "Save expense", cls: "btn--primary",
-        onClick: async () => {
-          if (!Validation.validate(form)) return false;
-          const d = await App.expenseData(form);
-          if (expense) await App.put(`/api/expenses/${expense.id}`, d);
-          else await App.post("/api/expenses", { ...d, shift_id: data.shift.id });
-          data.shift = (await App.get(`/api/shifts/${data.shift.id}`)).shift;
-          categories = (await App.get("/api/expense-categories")).categories;   // includes any new word just typed
-          App.toast(expense ? "Expense updated." : "Expense saved.", "ok");
-          render();
-        },
-      }] });
-    };
-    const addExpense = App.$("#expense-add");
-    if (addExpense) addExpense.addEventListener("click", () => openExpense(null));
-    App.$$("[data-edit-expense]", page).forEach((btn) => btn.addEventListener("click", () =>
-      openExpense(data.shift.money.expense_items.find((e) => String(e.id) === btn.dataset.editExpense))));
+    const sheet = App.$("#exp-sheet");
+    if (sheet) App.expenseSheet(sheet, {
+      title: "Matumizi — expenses paid from the cash this shift",
+      items: data.shift.money.expense_items, editable: editable(), categories,
+      save: async (lines) => {
+        const res = await App.put(`/api/shifts/${data.shift.id}/expenses`, { lines });
+        data.shift = (await App.get(`/api/shifts/${data.shift.id}`)).shift;
+        categories = (await App.get("/api/expense-categories")).categories;   // new words become suggestions
+        render();
+        return res;
+      },
+    });
 
     const submit = App.$("#submit-btn");
     if (submit) submit.addEventListener("click", () => App.run(async () => {

@@ -5,6 +5,7 @@ Manager: full control - create (auto-approved), approve, reject, edit, void.
 Financial records are never hard-deleted.
 """
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
@@ -13,7 +14,7 @@ from werkzeug.utils import secure_filename
 from ..auth import current_user, login_required, manager_required
 from ..calculations import money
 from ..extensions import db
-from ..models import Attachment, Expense, ExpenseCategory, Shift, User, utcnow
+from ..models import Attachment, Expense, ExpenseCategory, Shift, ShiftStaff, User, utcnow
 from ..services import audit
 from ..services.clock import today_local
 from .common import (ApiError, body, date_field, decimal_field, get_or_404, optional_text, require_text)
@@ -166,6 +167,115 @@ def create_expense():
     audit.log(me.station_id, me.id, f"{me.role} RECORDED EXPENSE", "expenses", expense.id, new=audit.snapshot(expense))
     db.session.commit()
     return jsonify({"expense": _expense_dict(expense, _names(me.station_id))}), 201
+
+
+def _save_sheet(me, scope, lines, new_expense):
+    """Save an expense sheet ("Matumizi"): every line is own words + amount, saved together.
+
+    `scope` is the query of expenses the sheet shows. Lines with an id update that expense,
+    lines without one are new (made by `new_expense()`), and the person's own pending
+    expenses in the scope left off the sheet are CANCELLED (never deleted). Expenses already
+    decided by the manager, or entered by someone else, are not touched.
+    """
+    if not isinstance(lines, list) or len(lines) > 100:
+        raise ApiError("Send the expense lines as a list (at most 100)")
+    mine = {e.id: e for e in scope.filter(Expense.status == "PENDING", Expense.entered_by == me.id)}
+    kept, created, changed = set(), 0, 0
+    for n, line in enumerate(lines, start=1):
+        if not isinstance(line, dict):
+            raise ApiError(f"Line {n} is not valid")
+        words = " ".join(str(line.get("name") or "").split())[:60]
+        if not words:
+            raise ApiError(f"Line {n}: write what the money was for")
+        data = {"category_name": words, "description": words, "amount": line.get("amount")}
+        if line.get("id"):
+            expense = mine.get(int(line["id"]))
+            if expense is None:
+                raise ApiError(f"Line {n} can no longer be changed (the manager may have decided it)", 409)
+            kept.add(expense.id)
+            data["expense_date"] = expense.expense_date.isoformat()
+            before = audit.snapshot(expense)
+            _apply(expense, data, me)
+            expense.description = expense.category.name   # one spelling for the words on the sheet
+            db.session.flush()
+            old, new = audit.changed_fields(before, audit.snapshot(expense))
+            if new:
+                changed += 1
+                audit.log(me.station_id, me.id, f"{me.role} EDITED EXPENSE", "expenses", expense.id, old, new)
+        else:
+            expense = new_expense()
+            data["expense_date"] = expense.expense_date.isoformat()
+            _apply(expense, data, me)
+            expense.description = expense.category.name
+            if me.is_manager:
+                expense.status, expense.approved_by, expense.approved_at = "APPROVED", me.id, utcnow()
+            db.session.add(expense)
+            db.session.flush()
+            created += 1
+            audit.log(me.station_id, me.id, f"{me.role} RECORDED EXPENSE", "expenses", expense.id,
+                      new=audit.snapshot(expense))
+    removed = [e for i, e in mine.items() if i not in kept]
+    for expense in removed:
+        expense.status, expense.status_reason = "CANCELLED", "Removed from the expense sheet"
+        audit.log(me.station_id, me.id, f"{me.role} CANCELLED EXPENSE", "expenses", expense.id,
+                  {"status": "PENDING"}, {"status": "CANCELLED"})
+    db.session.commit()
+    return jsonify({"ok": True, "added": created, "changed": changed, "removed": len(removed)})
+
+
+@bp.put("/shifts/<int:shift_id>/expenses")
+@login_required
+def save_shift_expenses(shift_id):
+    """The shift page's expense sheet: the expenses paid from this shift's cash."""
+    me = current_user()
+    shift = get_or_404(Shift, shift_id, me.station_id, "Shift")
+    if not me.is_manager:
+        if all(a.user_id != me.id for a in shift.staff):
+            raise ApiError("You are not assigned to this shift", 403)
+        if shift.status not in ("OPEN", "FLAGGED"):
+            raise ApiError("Expenses can only be changed while your shift is open", 409)
+    scope = Expense.query.filter(Expense.station_id == me.station_id, Expense.shift_id == shift.id)
+    return _save_sheet(me, scope, body().get("lines"), lambda: Expense(
+        station_id=me.station_id, entered_by=me.id, shift_id=shift.id, status="PENDING",
+        expense_date=shift.shift_date))
+
+
+def _my_sheet(me):
+    """A staff member's own expense sheet: today's expenses plus those of the shift they are working.
+
+    New lines go on that open shift (so they come off its cash), otherwise on today.
+    """
+    today = today_local(me.station_id)
+    shift = (Shift.query.join(ShiftStaff, ShiftStaff.shift_id == Shift.id)
+             .filter(ShiftStaff.user_id == me.id, Shift.station_id == me.station_id,
+                     Shift.status.in_(("OPEN", "FLAGGED")), Shift.shift_date >= today - timedelta(days=1))
+             .order_by(Shift.shift_date.desc(), Shift.sequence.desc()).first())
+    where = Expense.expense_date == today
+    if shift is not None:
+        where = db.or_(where, Expense.shift_id == shift.id)
+    scope = Expense.query.filter(Expense.station_id == me.station_id, Expense.entered_by == me.id, where)
+    return today, shift, scope
+
+
+@bp.get("/staff/expenses")
+@login_required
+def my_expense_sheet():
+    me = current_user()
+    today, shift, scope = _my_sheet(me)
+    rows = scope.filter(Expense.status != "CANCELLED").order_by(Expense.id).all()
+    names = _names(me.station_id)
+    return jsonify({"day": today.isoformat(), "shift": shift.label if shift else None,
+                    "expenses": [_expense_dict(e, names) for e in rows]})
+
+
+@bp.put("/staff/expenses")
+@login_required
+def save_my_expense_sheet():
+    me = current_user()
+    today, shift, scope = _my_sheet(me)
+    return _save_sheet(me, scope, body().get("lines"), lambda: Expense(
+        station_id=me.station_id, entered_by=me.id, status="PENDING",
+        shift_id=shift.id if shift else None, expense_date=shift.shift_date if shift else today))
 
 
 @bp.put("/expenses/<int:expense_id>")

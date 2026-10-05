@@ -256,6 +256,65 @@
     return form;
   };
 
+  /** "Matumizi" expense sheet: one line per expense (own words + amount), ➕ / − lines, running total.
+   *  items: expenses to show; lines the person may still change are editable, the rest are fixed.
+   *  save(lines) sends [{id, name, amount}] and resolves when saved (the caller then redraws). */
+  let expenseSheetSeq = 0;
+  App.expenseSheet = function (box, { items, editable, categories, save, title = "Matumizi — expenses" }) {
+    const listId = `exp-words-${++expenseSheetSeq}`;
+    const canEdit = (e) => editable && e.status === "PENDING" && e.entered_by === App.user.id;
+    const line = (e) => `<tr data-line data-id="${e ? e.id : ""}">
+      <td><input class="input" name="exp-name" list="${listId}" autocomplete="off" maxlength="60"
+                 placeholder="e.g. Umeme" aria-label="Expense in your own words" value="${App.esc(e ? e.category : "")}"></td>
+      <td><input class="input num" name="exp-amount" type="number" inputmode="decimal" min="0" step="0.01"
+                 placeholder="0" aria-label="Amount" value="${e ? Number(e.amount) : ""}"></td>
+      <td><button type="button" class="btn btn--sm btn--danger exp-sheet__btn" data-exp-remove title="Remove this line" aria-label="Remove this line">−</button></td>
+    </tr>`;
+    const fixed = items.filter((e) => !canEdit(e)).map((e) => `<tr data-fixed="${Number(e.amount)}">
+      <td>${App.esc(e.category)}${e.description && e.description !== e.category ? `<div class="small muted">${App.esc(e.description)}</div>` : ""}</td>
+      <td class="num">${App.money(e.amount)}</td><td>${App.badge(e.status)}</td></tr>`).join("");
+    const mine = items.filter(canEdit);
+    box.innerHTML = `<h3>${App.esc(title)}</h3>
+      <datalist id="${listId}">${categories.filter((c) => c.is_active).map((c) => `<option value="${App.esc(c.name)}">`).join("")}</datalist>
+      <div class="table-wrap"><table class="table exp-sheet">
+        <thead><tr><th>Expense</th><th class="num">Amount</th><th></th></tr></thead>
+        <tbody>${fixed}${editable ? (mine.length ? mine.map(line).join("") : line(null)) : ""}</tbody>
+        <tfoot><tr><td><strong>TOTAL</strong></td><td class="num"><strong data-exp-total></strong></td><td></td></tr></tfoot>
+      </table></div>
+      ${!editable && !items.length ? '<p class="empty">No expenses.</p>' : ""}
+      ${editable ? `<div class="form-actions">
+        <button type="button" class="btn btn--lg" data-exp-add>➕ Add line</button>
+        <button type="button" class="btn btn--primary btn--lg" data-exp-save>Save expenses</button></div>` : ""}`;
+    const body = App.$("tbody", box);
+    const total = () => {
+      let sum = 0;
+      App.$$("[data-fixed]", body).forEach((r) => { sum += Number(r.dataset.fixed) || 0; });
+      App.$$('[name="exp-amount"]', body).forEach((i) => { sum += Number(i.value) || 0; });
+      App.$("[data-exp-total]", box).textContent = App.money(sum);
+    };
+    total();
+    if (!editable) return;
+    body.addEventListener("input", total);
+    App.on(body, "click", "[data-exp-remove]", (e, b) => { b.closest("tr").remove(); total(); });
+    App.$("[data-exp-add]", box).addEventListener("click", () => {
+      body.insertAdjacentHTML("beforeend", line(null));
+      App.$$('[name="exp-name"]', body).pop().focus();
+    });
+    App.$("[data-exp-save]", box).addEventListener("click", () => App.run(async () => {
+      const lines = [];
+      for (const row of App.$$("[data-line]", body)) {
+        const name = App.$('[name="exp-name"]', row), amount = App.$('[name="exp-amount"]', row);
+        Validation.setError(name, null); Validation.setError(amount, null);
+        if (!name.value.trim() && !amount.value.trim()) continue;          // empty line: ignored
+        if (!name.value.trim()) { Validation.setError(name, "Write what it was for"); name.focus(); return; }
+        if (!(Number(amount.value) > 0)) { Validation.setError(amount, "Enter the amount"); amount.focus(); return; }
+        lines.push({ id: row.dataset.id ? Number(row.dataset.id) : null, name: name.value.trim(), amount: amount.value });
+      }
+      const res = await save(lines);
+      App.toast(`Expenses saved (${res.added} added, ${res.changed} changed, ${res.removed} removed).`, "ok");
+    }));
+  };
+
   /** Read an expense form, uploading the receipt first if one was chosen. */
   App.expenseData = async function (form) {
     const data = App.formData(form);
@@ -364,9 +423,7 @@
       : `<a href="${homeHref}">${App.esc(homeLabel)}</a> <span aria-hidden="true">›</span> <span aria-current="page">${App.esc(current ? current[2] : title)}</span>`;
     shell.insertBefore(App.h(`
       <aside class="sidebar" aria-label="Main navigation">
-        <div class="sidebar__brand"><div class="sidebar__logo" role="img" aria-label="Kigala Energies fuel pump logo">⛽</div>
-          <div>${App.user.role === "DIRECTOR" ? "All locations" : App.esc(App.station.name)}
-            <div class="sidebar__station">${App.user.role === "DIRECTOR" ? "Director portal" : "Petrol Station Management"}</div></div></div>
+        <div class="sidebar__brand"><img class="sidebar__wordmark" src="/img/login-bg.png" alt="Kigala Energy — oil and gas" width="150" height="138"></div>
         <ul class="nav">${nav}
           <li><a href="/change-password.html"><span class="nav__icon" aria-hidden="true">🔑</span>Change password</a></li>
           ${App.user.role === "STAFF" ? '<li><a href="/training.html" target="_blank" rel="noopener"><span class="nav__icon" aria-hidden="true">📘</span>Training guide</a></li>' : ""}

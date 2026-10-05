@@ -94,9 +94,9 @@ code { font-family: Consolas, "Courier New", monospace; font-size: .9em; }
 }
 
 .sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: .6rem;
+  display: flex; flex-direction: column;
+  align-items: center; text-align: center;
+  gap: .5rem;
   padding: 1rem 1.1rem;
   color: #fff;
   font-weight: 700;
@@ -104,14 +104,24 @@ code { font-family: Consolas, "Courier New", monospace; font-size: .9em; }
 }
 
 .sidebar__logo {
-  width: 34px; height: 34px;
+  width: 34px; height: 34px; flex: none;
   border-radius: 9px;
-  background: linear-gradient(135deg, var(--brand), var(--accent));
+  background: #fff;
   display: grid; place-items: center;
   font-size: 1.1rem;
 }
+.sidebar__logo img { width: 28px; height: 28px; }
+/* Full logo with its words (white lettering for the dark sidebar). */
+.sidebar__wordmark { display: block; width: 150px; height: auto; }
 
-.sidebar__station { font-size: .75rem; color: #94a3b8; font-weight: 400; }
+/* Company logo as a faint background behind every page (centred in the content area). */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url("/img/logo.png") no-repeat calc(50% + var(--sidebar-w) / 2) 55% / min(60vmin, 520px);
+  opacity: .07;
+}
+@media (max-width: 900px) { body::before { background-position: center 55%; } }
+
 
 .nav { list-style: none; margin: 0; padding: .6rem; overflow-y: auto; flex: 1; }
 .nav a {
@@ -306,14 +316,42 @@ code { font-family: Consolas, "Courier New", monospace; font-size: .9em; }
   min-height: 100vh;
   display: grid; place-items: center;
   padding: 1rem;
-  background: radial-gradient(circle at 20% 10%, #134e4a 0, #0f172a 55%);
+}
+body:has(.auth-page) { background: radial-gradient(circle at 20% 10%, #134e4a 0, #0f172a 55%) fixed; }
+body:has(.auth-page)::before { background-image: url("/img/logo-mark.png"); background-position: center; background-size: min(110vmin, 1000px); opacity: .12; }
+/* Login page: the full logo (refined, white lettering) behind the login card. */
+body:has(.auth-page--brand)::before {
+  background-image: url("/img/login-bg.png");
+  background-position: center 62%; background-size: min(92vmin, 860px); opacity: .22;
+}
+/* Card a little higher so the words of the logo show underneath it. */
+@media (min-height: 640px) { .auth-page--brand { align-items: start; padding-top: 5vh; } }
+@media (max-width: 599px) { body:has(.auth-page--brand)::before { background-position: center bottom 2vh; } }
+.auth-logo {
+  display: block; width: 180px; height: auto; margin: 0 auto .75rem;
+  background: #fff; border-radius: 16px; padding: .35rem;
 }
 .auth-card { width: 100%; max-width: 400px; }
-.auth-card .sidebar__logo { width: 48px; height: 48px; font-size: 1.5rem; margin-bottom: .75rem; }
 .auth-card h1 { margin-bottom: .25rem; }
 
 @media print {
   .sidebar, .topbar, .no-print { display: none !important; }
   .main { margin: 0; }
   .card { box-shadow: none; }
+}
+
+/* Shift expense sheet ("Matumizi"): own words + amount per line, running total. */
+.exp-sheet { table-layout: fixed; }
+.exp-sheet th:nth-child(2), .exp-sheet td:nth-child(2) { width: 9.5rem; }
+.exp-sheet th:nth-child(3), .exp-sheet td:nth-child(3) { width: 3.2rem; text-align: center; }
+.table.exp-sheet td:nth-child(3) { padding-left: .25rem; padding-right: .25rem; }
+.exp-sheet .input { width: 100%; min-width: 0; }
+.exp-sheet tfoot td { font-size: 1.05rem; border-top: 2px solid var(--border, #cbd5e1); }
+.exp-sheet__btn { min-width: 2.2rem; font-size: 1.15rem; line-height: 1; }
+@media (max-width: 480px) {
+  .table.exp-sheet th, .table.exp-sheet td { padding: .35rem .25rem; }
+  .exp-sheet .input { padding: .5rem .45rem; font-size: .95rem; }
+  .exp-sheet th:nth-child(2), .exp-sheet td:nth-child(2) { width: 7.6rem; }
+  .exp-sheet th:nth-child(3), .exp-sheet td:nth-child(3) { width: 2.4rem; }
+  .exp-sheet__btn { min-width: 0; width: 2rem; padding: .35rem 0; }
 }
