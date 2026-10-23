@@ -5,6 +5,7 @@ Manager: full control - create (auto-approved), approve, reject, edit, void.
 Financial records are never hard-deleted.
 """
 import uuid
+from io import BytesIO
 from datetime import timedelta
 from pathlib import Path
 
@@ -352,14 +353,22 @@ def upload():
     kind = sniff_file_type(head)
     if kind is None or kind != ALLOWED_EXTENSIONS[ext]:
         raise ApiError("That file is not a real PDF or photo. Please choose the receipt photo or PDF again.")
-    folder = Path(current_app.config["UPLOAD_DIR"])
-    folder.mkdir(parents=True, exist_ok=True)
     stored = f"{uuid.uuid4().hex}{ext}"          # random name: never the uploader's file name
-    path = folder / stored
-    file.save(path)
+    if current_app.config["VERCEL"]:
+        from vercel.blob import sync as blob
+        content = file.read()
+        uploaded = blob.put_blob(f"receipts/{stored}", content, access="private",
+                                 content_type=CONTENT_TYPES[kind])
+        stored, size_bytes = uploaded.pathname, len(content)
+    else:
+        folder = Path(current_app.config["UPLOAD_DIR"])
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / stored
+        file.save(path)
+        size_bytes = path.stat().st_size
     att = Attachment(station_id=me.station_id, file_name=original, stored_name=stored,
                      content_type=CONTENT_TYPES[kind],    # decided by the server, never by the browser
-                     size_bytes=path.stat().st_size, uploaded_by=me.id)
+                     size_bytes=size_bytes, uploaded_by=me.id)
     db.session.add(att)
     db.session.commit()
     return jsonify({"attachment": att.to_dict()}), 201
@@ -372,12 +381,20 @@ def download(attachment_id):
     att = get_or_404(Attachment, attachment_id, me.station_id, "File")
     if not me.is_manager and att.uploaded_by != me.id:
         raise ApiError("You cannot open this file", 403)
-    path = Path(current_app.config["UPLOAD_DIR"]) / att.stored_name
-    if not path.exists():
-        raise ApiError("File is missing from storage", 404)
     # Only ever served as a PDF or an image type (older records: re-derived from the extension).
     mimetype = att.content_type if att.content_type in CONTENT_TYPES.values() else \
         CONTENT_TYPES.get(ALLOWED_EXTENSIONS.get(Path(att.stored_name).suffix.lower()), "application/octet-stream")
-    response = send_file(path, mimetype=mimetype, download_name=att.file_name)
+    if current_app.config["VERCEL"]:
+        from vercel.blob import BlobNotFoundError, sync as blob
+        try:
+            content = blob.get_blob(att.stored_name, access="private").body
+        except BlobNotFoundError:
+            raise ApiError("File is missing from storage", 404) from None
+        response = send_file(BytesIO(content), mimetype=mimetype, download_name=att.file_name)
+    else:
+        path = Path(current_app.config["UPLOAD_DIR"]) / att.stored_name
+        if not path.exists():
+            raise ApiError("File is missing from storage", 404)
+        response = send_file(path, mimetype=mimetype, download_name=att.file_name)
     response.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
     return response

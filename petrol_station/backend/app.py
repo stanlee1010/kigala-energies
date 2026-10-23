@@ -57,10 +57,17 @@ def create_app(config_class=Config):
     frontend_dir = Path(config_class.FRONTEND_DIR)
     app = Flask(__name__, static_folder=None)
     app.config.from_object(config_class)
+    if app.config["VERCEL"]:
+        if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:"):
+            raise RuntimeError("Vercel deployments require DATABASE_URL to point to a persistent PostgreSQL database")
+        if app.config["INITIAL_MANAGER_PASSWORD"] == "ChangeMe123!":
+            raise RuntimeError("Set a unique MANAGER_PASSWORD in the Vercel project environment")
+        if app.config["INITIAL_DIRECTOR_PASSWORD"] == "Director123!":
+            raise RuntimeError("Set a unique DIRECTOR_PASSWORD in the Vercel project environment")
     if app.config["ENV_NAME"] == "production" and not app.config.get("SECRET_KEY_FROM_ENV") and not app.testing:
         raise RuntimeError("SECRET_KEY must be set in the environment (.env) when APP_ENV=production")
     if app.config.get("TRUST_PROXY"):
-        # Behind Render/Nginx: take the client IP and https scheme from the trusted proxy's headers.
+        # Behind a trusted load balancer, use its client IP and HTTPS headers.
         from werkzeug.middleware.proxy_fix import ProxyFix
         hops = app.config["TRUST_PROXY"]
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)

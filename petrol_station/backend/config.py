@@ -37,6 +37,7 @@ def _database_url():
 
 class Config:
     ENV_NAME = os.environ.get("APP_ENV", "development")
+    VERCEL = _bool("VERCEL", False)
 
     # Training portal: practice data in its own database, never the real one.
     DEMO_MODE = _bool("DEMO_MODE", False)
@@ -61,11 +62,11 @@ class Config:
     # Secure cookies). TRUST_PROXY=1 when behind a proxy/load balancer (Render, Nginx) so the
     # real client IP and https scheme are read from its X-Forwarded-* headers - never otherwise.
     FORCE_HTTPS = _bool("FORCE_HTTPS", False)
-    TRUST_PROXY = int(os.environ.get("TRUST_PROXY", "0"))
+    TRUST_PROXY = int(os.environ.get("TRUST_PROXY", "1" if VERCEL else "0"))
 
     SESSION_COOKIE_HTTPONLY = True          # JavaScript can never read the session cookie
     SESSION_COOKIE_SAMESITE = "Lax"         # not sent on cross-site form posts
-    SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", False) or FORCE_HTTPS
+    SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", False) or FORCE_HTTPS or VERCEL
     PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.environ.get("SESSION_HOURS", "12")))
 
     # Login protection (per client IP, on top of the 5-attempt account lock-out).
@@ -85,7 +86,7 @@ class Config:
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB receipts
 
     # Background monitor (shift generation, first-Wednesday detection, alerts).
-    SCHEDULER_ENABLED = _bool("SCHEDULER_ENABLED", True)
+    SCHEDULER_ENABLED = _bool("SCHEDULER_ENABLED", not VERCEL)
     SCHEDULER_INTERVAL_SECONDS = int(os.environ.get("SCHEDULER_INTERVAL_SECONDS", "300"))
 
     # Used only when the database is first created.

@@ -9,4 +9,5 @@ waitress==3.0.2
 gunicorn==26.2.0; platform_system != "Windows"
 psycopg2-binary==2.9.13
 PyMySQL==1.2.3
+vercel-blob>=0.5.0,<1.0
 pytest==9.1.1

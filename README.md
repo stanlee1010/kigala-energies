@@ -74,7 +74,13 @@ The app is ready to deploy. Publishing it needs an account you own. I can't crea
 2. On render.com, go to **New → Blueprint** and choose the repository. `render.yaml` creates the web service and the PostgreSQL database.
 3. When asked, enter the first `MANAGER_PASSWORD`.
 
-**Option B: any server with Docker.**
+**Option B: Vercel (serverless Flask + managed storage).**
+1. Create a Vercel project for this repository and set its **Root Directory** to `petrol_station`.
+2. Add a PostgreSQL database integration and set `DATABASE_URL`, `APP_ENV=production`, `SECRET_KEY`, `MANAGER_PASSWORD`, and `DIRECTOR_PASSWORD` in the project environment. Use a pooled PostgreSQL connection string and unique passwords.
+3. Create a **private** Vercel Blob store connected to the project. Receipt uploads use private Blob storage; the frontend and its routes stay unchanged.
+4. Deploy. The serverless environment disables the always-on monitor; dashboard checks still run when managers open the dashboard. Vercel Hobby cron jobs run only once per day, so they cannot replace the station's five-minute monitor.
+
+**Option C: any server with Docker.**
 ```
 cd petrol_station
 docker build -t kigala-energies .
@@ -82,7 +88,7 @@ docker run -p 8000:8000 --env-file .env kigala-energies
 ```
 Set `DATABASE_URL` to PostgreSQL or MySQL. Set `SESSION_COOKIE_SECURE=true` behind HTTPS.
 
-**Option C: this PC as the station server.** Run `start.bat`. Staff use it over the local Wi-Fi.
+**Option D: this PC as the station server.** Run `start.bat`. Staff use it over the local Wi-Fi.
 
 ## Security
 
