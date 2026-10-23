@@ -1,6 +1,9 @@
 .env
 .env.*
 !.env.example
+.agents/
+.claude/
+skills-lock.json
 .venv/
 __pycache__/
 *.py[cod]

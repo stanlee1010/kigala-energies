@@ -1,0 +1,17 @@
+.git/
+.vercel/
+.venv/
+.env
+.env.*
+petrol_station/.env*
+petrol_station/database/*.db
+petrol_station/database/*.db-*
+petrol_station/database/backups/
+petrol_station/uploads/*
+!petrol_station/uploads/.gitkeep
+petrol_station/reports/*
+!petrol_station/reports/.gitkeep
+petrol_station/logs/
+petrol_station/.agents/
+petrol_station/.claude/
+petrol_station/skills-lock.json
