@@ -71,6 +71,13 @@ class Config:
     # Login protection (per client IP, on top of the 5-attempt account lock-out).
     LOGIN_RATE_LIMIT = int(os.environ.get("LOGIN_RATE_LIMIT", "20"))          # attempts ...
     LOGIN_RATE_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_WINDOW", "600"))  # ... per 10 minutes
+    # Every API route: requests per minute per device (a busy page makes about 5).
+    API_RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "300"))
+    # A device that goes over the limit this many times in 10 minutes, or gets this many
+    # passwords wrong in 10 minutes (any accounts), is blocked for IP_BLOCK_MINUTES.
+    API_STRIKES_TO_BLOCK = int(os.environ.get("API_STRIKES_TO_BLOCK", "5"))
+    FAILED_LOGINS_TO_BLOCK = int(os.environ.get("FAILED_LOGINS_TO_BLOCK", "15"))
+    IP_BLOCK_MINUTES = int(os.environ.get("IP_BLOCK_MINUTES", "30"))
 
     FRONTEND_DIR = PROJECT_DIR / "frontend"
     UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", PROJECT_DIR / "uploads"))
@@ -101,6 +108,7 @@ class TestConfig(Config):
     SQLALCHEMY_ENGINE_OPTIONS = {}
     SCHEDULER_ENABLED = False
     SECRET_KEY = "test"
+    API_RATE_LIMIT = 100000   # tests that check the limit set their own
 
 
 class DemoTestConfig(TestConfig):

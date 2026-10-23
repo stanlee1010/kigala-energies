@@ -83,3 +83,6 @@ that resets or simulates must check `DEMO_MODE` (see `routes/demo.py::_require_d
 | Graphs daily/weekly/monthly/yearly | `services/finance.py::chart_series`, `dashboard.js` (Chart.js) |
 | Reports + PDF/Excel | `reports/builder.py`, `reports/exporters.py`, `routes/reports.py` |
 | Audit log | `services/audit.py`, `routes/alerts.py::audit_log` |
+| API rate limit, device blocking, wrong-password waits | `services/guard.py`, `app.py::enforce_https_and_same_origin`, `auth/routes.py::login` |
+| Offline saves (outbox) + page copies | `App.api`/`App.flushOutbox` in `app.js` (only whole-record PUTs are queued), `frontend/sw.js` |
+| Expense sheet (Matumizi) | `App.expenseSheet` in `app.js`, `routes/expenses.py::_save_sheet` |

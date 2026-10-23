@@ -17,7 +17,7 @@ from ..services.clock import today_local
 from ..services.finance import chart_series, financial_summary
 from ..services.settings import get_setting
 from ..services.stations import create_station, set_manager_stations
-from .common import ApiError, body, optional_text, require_text, validate_password
+from .common import ApiError, body, optional_email, optional_phone, optional_text, require_text, validate_password
 
 bp = Blueprint("director", __name__, url_prefix="/api/director")
 
@@ -154,7 +154,7 @@ def create_manager():
         raise ApiError("That username is already taken")
     ids = _station_ids(data)
     user = User(station_id=ids[0], username=username, full_name=require_text(data, "full_name", "Full name"),
-                phone=optional_text(data, "phone"), email=optional_text(data, "email"), role="MANAGER",
+                phone=optional_phone(data), email=optional_email(data), role="MANAGER",
                 must_change_password=True, created_by=me.id)
     user.set_password(validate_password(data.get("password")))
     db.session.add(user)
@@ -177,9 +177,9 @@ def update_manager(user_id):
     if "full_name" in data:
         user.full_name = require_text(data, "full_name", "Full name")
     if "phone" in data:
-        user.phone = optional_text(data, "phone")
+        user.phone = optional_phone(data)
     if "email" in data:
-        user.email = optional_text(data, "email")
+        user.email = optional_email(data)
     if "station_ids" in data:
         set_manager_stations(user, _station_ids(data))
     after = {"full_name": user.full_name, "phone": user.phone, "email": user.email,
@@ -243,7 +243,7 @@ def add_station():
     if Station.query.filter(db.func.lower(Station.name) == name.lower()).first():
         raise ApiError("A station with that name already exists")
     first = Station.query.order_by(Station.id).first()
-    station = create_station(name, address=optional_text(data, "address"), phone=optional_text(data, "phone", 40),
+    station = create_station(name, address=optional_text(data, "address"), phone=optional_phone(data),
                              timezone=get_setting(first.id, "timezone") if first else "Africa/Dar_es_Salaam",
                              currency=get_setting(first.id, "currency") if first else "TZS")
     for manager_id in data.get("manager_ids") or []:
@@ -301,7 +301,7 @@ def update_station(station_id):
     if "address" in data:
         station.address = optional_text(data, "address")
     if "phone" in data:
-        station.phone = optional_text(data, "phone", 40)
+        station.phone = optional_phone(data)
     if "is_active" in data:
         if not data["is_active"] and Station.query.filter_by(is_active=True).count() <= 1:
             raise ApiError("At least one station must stay open")

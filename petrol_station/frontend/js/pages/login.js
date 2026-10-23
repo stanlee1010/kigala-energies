@@ -14,19 +14,35 @@
     else location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : App.home(user);
   }
 
+  // After too many wrong passwords the server says how long to wait: count it down on the button.
+  const btn = App.$("button[type=submit]", form);
+  let timer = null;
+  function waitThenRetry(seconds) {
+    clearInterval(timer);
+    const end = Date.now() + seconds * 1000;
+    const tick = () => {
+      const left = Math.ceil((end - Date.now()) / 1000);
+      if (left <= 0) { clearInterval(timer); btn.disabled = false; btn.textContent = "Log in"; return; }
+      btn.disabled = true;
+      btn.textContent = `Wait ${left >= 60 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : `${left} s`}`;
+    };
+    tick();
+    timer = setInterval(tick, 1000);
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!Validation.validate(form)) return;
-    const btn = App.$("button[type=submit]", form);
+    if (!Validation.validate(form) || btn.disabled) return;
     btn.disabled = true;
     try {
       await login(App.formData(form));
     } catch (err) {
       App.error(err);
-      App.$("#password").select();
-    } finally {
-      btn.disabled = false;
+      App.$("#password").value = "";
+      App.$("#password").focus();
+      if (err.retryAfter) { waitThenRetry(err.retryAfter); return; }
     }
+    btn.disabled = false;
   });
 
   // Training portal: show the practice accounts. Real portal: link to training if it is running.

@@ -14,7 +14,7 @@ from ..models import AuditLog, Shift, ShiftDefinition, ShiftStaff, Station, User
 from ..services import audit, roster
 from ..services.clock import today_local
 from ..services.stations import accessible_station_ids
-from .common import ApiError, body, get_or_404, optional_text, require_text, validate_password
+from .common import ApiError, body, get_or_404, optional_email, optional_phone, optional_text, require_text, validate_password
 
 bp = Blueprint("users", __name__, url_prefix="/api/users")
 
@@ -102,7 +102,7 @@ def create_user():
     station = _station_for(me, data.get("station_id"))
     user = User(
         station_id=station.id, username=username, full_name=require_text(data, "full_name", "Full name"),
-        phone=optional_text(data, "phone"), email=optional_text(data, "email"), role="STAFF",
+        phone=optional_phone(data), email=optional_email(data), role="STAFF",
         is_active=(data.get("status", "ACTIVE") != "DISABLED"), must_change_password=True, created_by=me.id,
     )
     user.set_password(validate_password(data.get("password")))
@@ -126,9 +126,9 @@ def update_user(user_id):
     if "full_name" in data:
         user.full_name = require_text(data, "full_name", "Full name")
     if "phone" in data:
-        user.phone = optional_text(data, "phone")
+        user.phone = optional_phone(data)
     if "email" in data:
-        user.email = optional_text(data, "email")
+        user.email = optional_email(data)
     if data.get("station_id") not in (None, "") and user.role == "STAFF":
         station = _station_for(me, data.get("station_id"))
         if station.id != user.station_id:

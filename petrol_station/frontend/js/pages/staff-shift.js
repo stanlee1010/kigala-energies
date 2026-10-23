@@ -183,7 +183,27 @@ App.run(async () => {
     wire();
   }
 
+  /** Show what is saved on this device but not sent yet (e.g. after reopening the page offline). */
+  function markPending(card) {
+    if (!App.$(".pending-note", card)) card.appendChild(App.h('<p class="small pending-note">⏳ Saved on this device — waiting for the internet to send.</p>'));
+  }
+  function applyPending() {
+    App.pending(`/api/shifts/${data.shift.id}/readings/`).forEach((item) => {
+      const card = App.$(`[data-pump="${item.url.split("/").pop()}"]`, page);
+      if (!card) return;
+      if (item.data.opening_meter !== undefined) App.$('[name="opening_meter"]', card).value = item.data.opening_meter;
+      if (item.data.closing_meter !== undefined) App.$('[name="closing_meter"]', card).value = item.data.closing_meter;
+      markPending(card);
+    });
+    const online = App.pending(`/api/shifts/${data.shift.id}/online`)[0];
+    if (online && App.$("#online-input")) {
+      App.$("#online-input").value = online.data.online_expression;
+      App.$("#online-input").dispatchEvent(new Event("input"));
+    }
+  }
+
   function wire() {
+    if (data.shift) applyPending();
     const start = App.$("#start-btn");
     if (start) start.addEventListener("click", () => App.run(async () => {
       const res = await App.post(`/api/shifts/${data.shift.id}/start`);
@@ -216,6 +236,7 @@ App.run(async () => {
         btn.disabled = true;
         try {
           const res = await App.put(`/api/shifts/${data.shift.id}/readings/${card.dataset.pump}`, payload);
+          if (res.queued) { App.savedOffline(); markPending(card); return; }
           data.shift = res.shift;
           App.toast("Readings saved.", "ok");
           render();
@@ -236,6 +257,7 @@ App.run(async () => {
     if (saveOnline) saveOnline.addEventListener("click", () => App.run(async () => {
       if (addUp(online.value) === null) { online.focus(); return; }
       const res = await App.put(`/api/shifts/${data.shift.id}/online`, { online_expression: online.value });
+      if (res.queued) { App.savedOffline(); return; }
       data.shift = res.shift;
       App.toast(`Online money saved: ${App.money(res.shift.money.online)}.`, "ok");
       render();
@@ -244,9 +266,10 @@ App.run(async () => {
     const sheet = App.$("#exp-sheet");
     if (sheet) App.expenseSheet(sheet, {
       title: "Matumizi — expenses paid from the cash this shift",
-      items: data.shift.money.expense_items, editable: editable(), categories,
+      items: withPendingLines(data.shift.money.expense_items, `/api/shifts/${data.shift.id}/expenses`), editable: editable(), categories,
       save: async (lines) => {
         const res = await App.put(`/api/shifts/${data.shift.id}/expenses`, { lines });
+        if (res.queued) return res;
         data.shift = (await App.get(`/api/shifts/${data.shift.id}`)).shift;
         categories = (await App.get("/api/expense-categories")).categories;   // new words become suggestions
         render();
@@ -264,6 +287,12 @@ App.run(async () => {
       render();
     }));
   }
+
+  // When saves made without internet have been sent, show the fresh figures.
+  document.addEventListener("outbox:sent", () => App.run(async () => {
+    data = await App.get("/api/staff/my-shift");
+    render();
+  }));
 
   const [shiftData, { categories: allCategories }] = await Promise.all([
     App.get("/api/staff/my-shift"), App.get("/api/expense-categories")]);

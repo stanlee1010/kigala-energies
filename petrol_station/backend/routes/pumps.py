@@ -6,7 +6,7 @@ from ..extensions import db
 from ..models import FuelType, Pump, PumpReading, Shift, StockThreshold, Supplier
 from ..services import audit
 from ..services.tanks import default_tank, resolve_tank
-from .common import ApiError, body, get_or_404, optional_text, require_text
+from .common import ApiError, body, color_field, get_or_404, optional_email, optional_phone, optional_text, require_text
 
 bp = Blueprint("pumps", __name__, url_prefix="/api")
 
@@ -203,7 +203,7 @@ def create_fuel_type():
     if FuelType.query.filter_by(code=code).first():
         raise ApiError("A fuel type with that code already exists")
     fuel = FuelType(code=code, name=require_text(data, "name", "Name", 60),
-                    color=optional_text(data, "color", 20) or "#64748b")
+                    color=color_field(data) or "#64748b")
     db.session.add(fuel)
     db.session.flush()
     audit.log(me.station_id, me.id, "MANAGER ADDED FUEL TYPE", "fuel_types", fuel.id, new=audit.snapshot(fuel))
@@ -221,7 +221,7 @@ def update_fuel_type(fuel_id):
     if "name" in data:
         fuel.name = require_text(data, "name", "Name", 60)
     if "color" in data:
-        fuel.color = optional_text(data, "color", 20) or fuel.color
+        fuel.color = color_field(data) or fuel.color
     if "is_active" in data:
         fuel.is_active = bool(data["is_active"])
     old, new = audit.changed_fields(before, audit.snapshot(fuel))
@@ -248,8 +248,8 @@ def create_supplier():
     name = require_text(data, "name", "Supplier name", 150)
     if Supplier.query.filter_by(station_id=me.station_id, name=name).first():
         raise ApiError("That supplier already exists")
-    supplier = Supplier(station_id=me.station_id, name=name, phone=optional_text(data, "phone"),
-                        email=optional_text(data, "email"))
+    supplier = Supplier(station_id=me.station_id, name=name, phone=optional_phone(data),
+                        email=optional_email(data))
     db.session.add(supplier)
     db.session.flush()
     audit.log(me.station_id, me.id, "MANAGER ADDED SUPPLIER", "suppliers", supplier.id, new=audit.snapshot(supplier))

@@ -34,6 +34,13 @@
   /* ------------------------------------------------------------------ API */
 
   App.api = async function (method, url, data, opts = {}) {
+    // Saves that can wait for the internet (see "offline" below): kept on this device and sent later.
+    const canQueue = method === "PUT" && !opts.noQueue && QUEUEABLE.some((r) => r.test(url));
+    if (canQueue && (!navigator.onLine || readBox().length)) {
+      queue(method, url, data);      // keeps the order when older saves are still waiting
+      App.flushOutbox();
+      return { queued: true };
+    }
     // X-Requested-With proves the request comes from this site's own pages (anti-CSRF, checked by the server).
     const init = { method, headers: { Accept: "application/json", "X-Requested-With": "fetch" }, credentials: "same-origin" };
     if (data instanceof FormData) init.body = data;
@@ -41,7 +48,18 @@
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(data);
     }
-    const res = await fetch(url, init);
+    let res;
+    try {
+      // A very slow connection is treated like no connection for saves that can wait.
+      const ctrl = canQueue ? new AbortController() : null;
+      if (ctrl) { init.signal = ctrl.signal; setTimeout(() => ctrl.abort(), 20000); }
+      res = await fetch(url, init);
+    } catch (e) {
+      if (canQueue) { queue(method, url, data); return { queued: true }; }
+      const err = new Error("No internet connection — this was not saved. Please try again when the connection is back.");
+      err.offline = true;
+      throw err;
+    }
     let payload = null;
     try { payload = await res.json(); } catch (e) { /* non-JSON */ }
     if (res.status === 401 && !opts.allow401) {
@@ -53,10 +71,83 @@
       err.title = payload && payload.title;
       err.details = payload && payload.details;
       err.status = res.status;
+      err.retryAfter = payload && payload.retry_after;
       throw err;
     }
     return payload;
   };
+  /* ----------------------------------------------- offline: save now, send later */
+  // Meter readings, online money and expense sheets saved without internet stay on this device,
+  // in order, and are sent automatically when the connection is back. Only saves that replace a
+  // whole record (PUT) are kept, so sending one twice can never count money twice.
+  const QUEUEABLE = [/^\/api\/shifts\/\d+\/readings\/\d+$/, /^\/api\/shifts\/\d+\/online$/,
+                     /^\/api\/shifts\/\d+\/expenses$/, /^\/api\/staff\/expenses$/];
+  const boxKey = () => `kigala.outbox.${App.user ? App.user.id : "anon"}`;
+  function readBox() {
+    try { return JSON.parse(localStorage.getItem(boxKey()) || "[]"); } catch (e) { return []; }
+  }
+  function writeBox(items) {
+    try { localStorage.setItem(boxKey(), JSON.stringify(items)); } finally { renderOfflineBar(); }
+  }
+  function queue(method, url, data) {
+    const items = readBox().filter((i) => !(i.method === method && i.url === url));   // newest replaces older
+    items.push({ method, url, data, at: new Date().toISOString() });
+    try { writeBox(items); } catch (e) {
+      throw new Error("No internet, and this phone could not keep the change (storage is full or blocked). Nothing was saved.");
+    }
+  }
+  /** Saves still waiting to be sent whose address starts with `prefix`. */
+  App.pending = (prefix) => readBox().filter((i) => i.url.startsWith(prefix));
+
+  let flushing = false;
+  App.flushOutbox = async function () {
+    if (flushing || !App.user || !navigator.onLine) return;
+    flushing = true;
+    renderOfflineBar();
+    let sent = 0;
+    try {
+      for (let item = readBox()[0]; item; item = readBox()[0]) {
+        try {
+          await App.api(item.method, item.url, item.data, { noQueue: true, allow401: true });
+          sent += 1;
+        } catch (err) {
+          // No connection, server busy or logged out: keep it and try again later.
+          if (err.offline || !err.status || err.status >= 500 || err.status === 429 || err.status === 401) break;
+          App.toast(`A change saved without internet could not be sent: ${err.message}`, "error", 12000);
+        }
+        writeBox(readBox().filter((i) => !(i.url === item.url && i.at === item.at)));
+      }
+    } finally {
+      flushing = false;
+      renderOfflineBar();
+    }
+    if (sent) {
+      App.toast(`${sent} change${sent > 1 ? "s" : ""} saved without internet ${sent > 1 ? "have" : "has"} now been sent.`, "ok");
+      document.dispatchEvent(new CustomEvent("outbox:sent"));
+    }
+  };
+
+  function renderOfflineBar() {
+    if (!document.body) return;
+    let bar = document.getElementById("offline-bar");
+    const waiting = App.user ? readBox().length : 0;
+    if (navigator.onLine && !waiting) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = App.h('<div id="offline-bar" class="offline-bar" role="status" aria-live="polite"></div>');
+      document.body.appendChild(bar);
+      App.on(bar, "click", "[data-send-now]", () => App.flushOutbox());
+    }
+    const saved = waiting ? `${waiting} change${waiting > 1 ? "s" : ""} saved on this device` : "";
+    bar.innerHTML = !navigator.onLine
+      ? `📴 <strong>No internet.</strong> ${saved ? `${saved} — sent automatically when the internet is back.` : "Readings, online money and expenses you save are kept on this device."}`
+      : `📤 ${flushing ? "Sending" : "Waiting to send"}: ${saved}. ${flushing ? "" : '<button type="button" class="btn btn--sm" data-send-now>Send now</button>'}`;
+  }
+  /** The message pages show after a save that is waiting for the internet. */
+  App.savedOffline = () => App.toast("Saved on this device. It will be sent automatically when the internet is back.", "warn", 6000);
+
+  window.addEventListener("online", () => { renderOfflineBar(); App.flushOutbox(); });
+  window.addEventListener("offline", renderOfflineBar);
+
   App.get = (url) => App.api("GET", url);
   App.post = (url, data = {}) => App.api("POST", url, data);
   App.put = (url, data = {}) => App.api("PUT", url, data);
@@ -86,7 +177,7 @@
   App.date = (v) => {
     if (!v) return "—";
     const [y, m, d] = String(v).slice(0, 10).split("-");
-    return `${d}/${m}/${y}`;
+    return App.esc(`${d}/${m}/${y}`);
   };
   /** Station-local naive ISO string, e.g. 2026-09-28T06:00:00 */
   App.localDateTime = (v) => (v ? `${App.date(v)} ${String(v).slice(11, 16)}` : "—");
@@ -98,7 +189,8 @@
       timeZone: App.settings.timezone, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
     }).format(d).replace(",", "");
   };
-  App.label = (s) => String(s || "").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+  // Codes like OPEN or NIGHT_SHIFT -> "Night shift". Characters that could form HTML are dropped.
+  App.label = (s) => String(s || "").replace(/[<>&"'`]/g, "").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
   App.badge = (status, text) => `<span class="badge badge--${App.esc(status)}">${App.esc(text || App.label(status))}</span>`;
   App.fuelDot = (color) => `<span class="fuel-dot" style="background:${App.esc(color || "#64748b")}"></span>`;
   App.signed = (v, fmt = App.num) => (Number(v) > 0 ? "+" : "") + fmt(v);
@@ -259,6 +351,14 @@
   /** "Matumizi" expense sheet: one line per expense (own words + amount), ➕ / − lines, running total.
    *  items: expenses to show; lines the person may still change are editable, the rest are fixed.
    *  save(lines) sends [{id, name, amount}] and resolves when saved (the caller then redraws). */
+  /** Expense items with any sheet saved offline (not sent yet) shown in place of the person's pending lines. */
+  window.withPendingLines = function (items, url) {
+    const waiting = App.pending(url)[0];
+    if (!waiting) return items;
+    const decided = items.filter((e) => !(e.status === "PENDING" && e.entered_by === App.user.id));
+    return decided.concat(waiting.data.lines.map((l) => ({ id: l.id, category: l.name, description: l.name,
+      amount: l.amount, status: "PENDING", entered_by: App.user.id })));
+  };
   let expenseSheetSeq = 0;
   App.expenseSheet = function (box, { items, editable, categories, save, title = "Matumizi — expenses" }) {
     const listId = `exp-words-${++expenseSheetSeq}`;
@@ -311,7 +411,8 @@
         lines.push({ id: row.dataset.id ? Number(row.dataset.id) : null, name: name.value.trim(), amount: amount.value });
       }
       const res = await save(lines);
-      App.toast(`Expenses saved (${res.added} added, ${res.changed} changed, ${res.removed} removed).`, "ok");
+      if (res.queued) App.savedOffline();
+      else App.toast(`Expenses saved (${res.added} added, ${res.changed} changed, ${res.removed} removed).`, "ok");
     }));
   };
 
@@ -454,10 +555,14 @@
 
     App.$(".menu-toggle").addEventListener("click", () => shell.classList.add("nav-open"));
     App.$(".backdrop").addEventListener("click", () => shell.classList.remove("nav-open"));
-    App.$("#logout-btn").addEventListener("click", async () => {
+    App.$("#logout-btn").addEventListener("click", () => App.run(async () => {
+      const waiting = readBox().length;
+      if (waiting && !(await App.ask({ title: "Changes not sent yet", confirmLabel: "Log out anyway", danger: true,
+        message: `${waiting} change(s) saved without internet are still on this device. They will be sent the next time you log in here. Log out anyway?` }))) return;
       await App.post("/api/auth/logout").catch(() => null);
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage("clear-data");
       location.href = "/login.html";
-    });
+    }));
   }
 
   /* ------------------------------------------------ training portal banner */
@@ -601,6 +706,13 @@
     App.demo = !!s.demo;
     renderShell(title);
     if (App.demo) renderTrainingBanner();
+    // Offline support: saved copies of pages/data (needs HTTPS or localhost) and the outbox.
+    if ("serviceWorker" in navigator && window.isSecureContext && !App.demo) {
+      navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline copy not available:", e));
+    }
+    renderOfflineBar();
+    App.flushOutbox();
+    setInterval(() => { if (readBox().length) App.flushOutbox(); }, 30000);
     await syncClock();
     tick();
     setInterval(tick, 1000);

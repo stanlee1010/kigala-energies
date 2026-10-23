@@ -11,3 +11,5 @@ petrol_station/uploads/*
 petrol_station/reports/*
 !petrol_station/reports/.gitkeep
 petrol_station/logs/
+petrol_station/database/*.db-wal
+petrol_station/database/*.db-shm

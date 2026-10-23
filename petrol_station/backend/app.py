@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, redirect, request, send_from_directory
+from sqlalchemy import event
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.exceptions import HTTPException
 
@@ -34,6 +35,24 @@ class JSONProvider(DefaultJSONProvider):
         return value
 
 
+def _tune_sqlite(engine):
+    """Local SQLite: let many people work at once. WAL lets readers carry on while one person
+    saves; busy_timeout makes a second writer wait its turn instead of failing."""
+    if engine.url.get_backend_name() != "sqlite":
+        return
+    in_memory = engine.url.database in (None, "", ":memory:")
+    read_only = "mode=ro" in str(engine.url)
+
+    @event.listens_for(engine, "connect")
+    def _pragmas(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA busy_timeout=15000")
+        if not in_memory and not read_only:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
+
 def create_app(config_class=Config):
     frontend_dir = Path(config_class.FRONTEND_DIR)
     app = Flask(__name__, static_folder=None)
@@ -50,6 +69,8 @@ def create_app(config_class=Config):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     db.init_app(app)
+    with app.app_context():
+        _tune_sqlite(db.engine)
 
     from .auth.routes import bp as auth_bp
     from .routes import (alerts, capital, dashboard, demo, director, expenses, fuel, pumps, refills, reports, roster,
@@ -66,6 +87,16 @@ def create_app(config_class=Config):
         # Force HTTPS on the internet (the health check stays reachable for the host's probe).
         if app.config.get("FORCE_HTTPS") and not request.is_secure and request.path != "/healthz":
             return redirect(request.url.replace("http://", "https://", 1), code=308)
+        # Rate limit every API route per device; block a device that keeps attacking.
+        if request.path.startswith("/api/"):
+            from .services import guard
+            from .services.audit import client_ip
+            refused = guard.check_api_request(client_ip())
+            if refused:
+                status, message, retry_after = refused
+                response = jsonify({"error": message, "retry_after": retry_after})
+                response.headers["Retry-After"] = str(retry_after)
+                return response, status
         # Block cross-site request forgery: a state-changing API call must be JSON or carry the
         # X-Requested-With header that only this site's own JavaScript sends (browsers do not let
         # other websites add it without permission).

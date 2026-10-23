@@ -30,14 +30,15 @@ App.run(async () => {
       App.get("/api/staff/expenses"), App.get("/api/expense-categories")]);
     App.expenseSheet(App.$("#tab-expenses"), {
       title: `Matumizi — ${shift ? `${shift} shift` : `today, ${App.date(App.serverToday())}`}`,
-      items: expenses, editable: true, categories,
+      items: withPendingLines(expenses, "/api/staff/expenses"), editable: true, categories,
       save: async (lines) => {
         const res = await App.put("/api/staff/expenses", { lines });
-        await loadExpenses();
+        if (!res.queued) await loadExpenses();
         return res;
       },
     });
   }
 
+  document.addEventListener("outbox:sent", () => App.run(loadExpenses));
   await Promise.all([loadRefills(), loadExpenses()]);
 });

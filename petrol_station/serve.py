@@ -15,4 +15,5 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
     print(f"Kigala Energies station system running on http://{host}:{port}")
-    serve(create_app(), host=host, port=port, threads=8)
+    # 16 worker threads: many phones can be served at once (a slow upload does not hold up the rest).
+    serve(create_app(), host=host, port=port, threads=int(os.environ.get("THREADS", "16")))

@@ -11,7 +11,8 @@ any table is rebuilt.
       * shift_definitions seeded from the old morning_start / night_start settings
 """
 import logging
-import shutil
+import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -38,7 +39,9 @@ def _backup_sqlite():
     target = target_dir / f"{source.stem}_{datetime.now():%Y%m%d_%H%M%S}_before_upgrade{source.suffix}"
     db.session.commit()
     db.engine.dispose()
-    shutil.copy2(source, target)
+    # SQLite's own backup copies a consistent snapshot, including changes still in the WAL file.
+    with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(target)) as dst:
+        src.backup(dst)
     log.warning("Database backed up to %s", target)
     return target
 

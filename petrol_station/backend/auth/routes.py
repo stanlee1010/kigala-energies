@@ -5,7 +5,7 @@ from flask import Blueprint, current_app, jsonify, session
 from ..extensions import db
 from ..models import Station, User, utcnow
 from ..routes.common import ApiError, body, require_text, validate_password
-from ..services import audit, ratelimit
+from ..services import audit, guard, ratelimit
 from ..services.audit import client_ip
 from . import current_user, login_required, login_user, station_in_use
 
@@ -13,6 +13,13 @@ bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 MAX_FAILED_LOGINS = 5
 LOCK_MINUTES = 10
+# Wait after the 3rd and 4th wrong password in a row (seconds); the 5th locks for LOCK_MINUTES.
+SHORT_WAITS = {3: 30, 4: 60}
+
+
+def _wait_text(seconds):
+    seconds = max(1, int(seconds))
+    return f"{seconds // 60} min {seconds % 60:02d} s" if seconds >= 60 else f"{seconds} seconds"
 
 
 def user_payload(user):
@@ -58,23 +65,36 @@ def login():
     wait = ratelimit.hit(f"login:{client_ip()}", current_app.config["LOGIN_RATE_LIMIT"],
                          current_app.config["LOGIN_RATE_WINDOW_SECONDS"])
     if wait:
-        raise ApiError(f"Too many login attempts from this device. Try again in {max(1, wait // 60)} minute(s).", 429)
+        guard.failed_login(client_ip())
+        raise ApiError(f"Too many login attempts from this device. Try again in {_wait_text(wait)}.", 429,
+                       retry_after=wait)
     username = require_text(data, "username", max_len=60).lower()
     password = str(data.get("password") or "")[:200]
     user = User.query.filter(db.func.lower(User.username) == username).first()
     now = utcnow()
 
     if user and user.locked_until and user.locked_until > now:
-        raise ApiError("Too many failed attempts. Try again in a few minutes.", 429)
+        left = (user.locked_until - now).total_seconds()
+        raise ApiError(f"Too many wrong passwords. Wait {_wait_text(left)} before trying again.", 429,
+                       retry_after=left)
     if current_app.config.get("DEMO_MODE") and user is not None and user.role != "STAFF":
         raise ApiError("The training portal is for staff practice only. Managers use the real system.", 403)
     if user is None or not user.check_password(password):
+        wait = None
         if user:
             user.failed_login_count += 1
             if user.failed_login_count >= MAX_FAILED_LOGINS:
-                user.locked_until = now + timedelta(minutes=LOCK_MINUTES)
+                wait = LOCK_MINUTES * 60
                 user.failed_login_count = 0
+            else:
+                wait = SHORT_WAITS.get(user.failed_login_count)
+            if wait:
+                user.locked_until = now + timedelta(seconds=wait)
             db.session.commit()
+        guard.failed_login(client_ip(), user.station_id if user else None, username)
+        if wait:
+            raise ApiError(f"Incorrect username or password. Wait {_wait_text(wait)} before trying again.", 401,
+                           retry_after=wait)
         raise ApiError("Incorrect username or password", 401)
     if not user.is_active:
         raise ApiError("This account has been disabled. Please contact the manager.", 403)

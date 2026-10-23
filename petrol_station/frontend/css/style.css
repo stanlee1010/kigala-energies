@@ -281,6 +281,7 @@ body::before {
 }
 .toast--error { border-left-color: #ef4444; }
 .toast--ok { border-left-color: #22c55e; }
+.toast--warn { border-left-color: #f59e0b; }
 @keyframes toast-in { from { transform: translateY(10px); opacity: 0; } }
 
 /* ------------------------------------------------------------------- modal */
@@ -355,3 +356,14 @@ body:has(.auth-page--brand)::before {
   .exp-sheet th:nth-child(3), .exp-sheet td:nth-child(3) { width: 2.4rem; }
   .exp-sheet__btn { min-width: 0; width: 2rem; padding: .35rem 0; }
 }
+
+/* Offline: bar at the bottom while there is no internet or saves are waiting to be sent. */
+.offline-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+  padding: .6rem 1rem; background: #78350f; color: #fff; font-size: .92rem;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, .25);
+}
+.offline-bar .btn { margin-left: auto; }
+.pending-note { color: var(--warn, #b45309); font-weight: 600; margin: .5rem 0 0; }
+body:has(#offline-bar) .toasts { bottom: 4.5rem; }   /* keep messages above the offline bar */

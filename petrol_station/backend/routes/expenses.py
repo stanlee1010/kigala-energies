@@ -17,7 +17,7 @@ from ..extensions import db
 from ..models import Attachment, Expense, ExpenseCategory, Shift, ShiftStaff, User, utcnow
 from ..services import audit
 from ..services.clock import today_local
-from .common import (ApiError, body, date_field, decimal_field, get_or_404, optional_text, require_text)
+from .common import (ApiError, body, clean_text, date_field, decimal_field, get_or_404, optional_text, require_text)
 
 bp = Blueprint("expenses", __name__, url_prefix="/api")
 
@@ -105,7 +105,7 @@ def resolve_category(data, me):
     An existing category is matched ignoring capitals; anything new becomes a new category
     so it is suggested next time. A category_id is still accepted.
     """
-    name = " ".join(str(data.get("category_name") or "").split())[:60]
+    name = " ".join(clean_text(data.get("category_name")).split())[:60]
     if not name:
         if data.get("category_id"):
             return get_or_404(ExpenseCategory, int(data["category_id"]), me.station_id, "Category")
@@ -184,7 +184,7 @@ def _save_sheet(me, scope, lines, new_expense):
     for n, line in enumerate(lines, start=1):
         if not isinstance(line, dict):
             raise ApiError(f"Line {n} is not valid")
-        words = " ".join(str(line.get("name") or "").split())[:60]
+        words = " ".join(clean_text(line.get("name")).split())[:60]
         if not words:
             raise ApiError(f"Line {n}: write what the money was for")
         data = {"category_name": words, "description": words, "amount": line.get("amount")}

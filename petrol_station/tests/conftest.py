@@ -8,14 +8,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app import create_app  # noqa: E402
 from backend.config import TestConfig  # noqa: E402
 from backend.extensions import db  # noqa: E402
-from backend.services import ratelimit  # noqa: E402
+from backend.services import guard, ratelimit  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _fresh_rate_limits():
     ratelimit.reset()
+    guard.reset()
     yield
     ratelimit.reset()
+    guard.reset()
 
 
 @pytest.fixture()

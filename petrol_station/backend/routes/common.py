@@ -1,4 +1,5 @@
 """Request parsing helpers shared by all API routes."""
+import re
 from datetime import date, datetime
 
 from flask import request
@@ -8,12 +9,15 @@ from ..extensions import db
 
 
 class ApiError(Exception):
-    def __init__(self, message, status=400, title=None, details=None):
+    def __init__(self, message, status=400, title=None, details=None, retry_after=None):
         super().__init__(message)
         self.message, self.status, self.title, self.details = message, status, title, details
+        self.retry_after = retry_after
 
     def to_dict(self):
         data = {"error": self.message}
+        if self.retry_after:
+            data["retry_after"] = int(self.retry_after)
         if self.title:
             data["title"] = self.title
         if self.details is not None:
@@ -30,8 +34,19 @@ def body():
     return data
 
 
+# Invisible characters that have no place in names or notes: control characters (except tab and
+# new line) and the "bidi" marks that can make text display differently from what it is.
+_INVISIBLE = {c: None for c in list(range(0, 9)) + [11, 12] + list(range(14, 32)) + [127]
+              + list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A)) + [0x200B, 0x200E, 0x200F, 0xFEFF]}
+
+
+def clean_text(value):
+    """Text from a person: invisible/control characters removed, outer spaces trimmed."""
+    return str(value if value is not None else "").translate(_INVISIBLE).strip()
+
+
 def require_text(data, key, label=None, max_len=255):
-    value = str(data.get(key) or "").strip()
+    value = clean_text(data.get(key))
     if not value:
         raise ApiError(f"{label or key.replace('_', ' ').capitalize()} is required")
     if len(value) > max_len:
@@ -40,7 +55,7 @@ def require_text(data, key, label=None, max_len=255):
 
 
 def optional_text(data, key, max_len=255):
-    value = str(data.get(key) or "").strip()
+    value = clean_text(data.get(key))
     return value[:max_len] or None
 
 
@@ -102,4 +117,25 @@ def validate_password(value):
         raise ApiError("Password must be at least 8 characters long")
     if value.isdigit() or value.isalpha():
         raise ApiError("Password must contain both letters and numbers")
+    return value
+
+
+def optional_email(data, key="email"):
+    value = optional_text(data, key, 120)
+    if value and not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[A-Za-z]{2,}", value):
+        raise ApiError("Email address is not valid")
+    return value
+
+
+def optional_phone(data, key="phone", max_len=40):
+    value = optional_text(data, key, max_len)
+    if value and not re.fullmatch(r"[0-9+()\-\s]{6,40}", value):
+        raise ApiError("Phone number may only contain digits, spaces, +, - and brackets")
+    return value
+
+
+def color_field(data, key="color"):
+    value = optional_text(data, key, 20)
+    if value and not re.fullmatch(r"#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?", value):
+        raise ApiError("Colour must look like #1a2b3c")
     return value

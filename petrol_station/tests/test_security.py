@@ -123,14 +123,72 @@ def test_passwords_are_hashed(app):
 
 
 # 11. Rate limit login --------------------------------------------------------------------------
-def test_login_is_rate_limited_per_device_and_account(app):
+def test_wrong_passwords_get_a_growing_wait(app):
     client = browser_client(app)
-    codes = [client.post("/api/auth/login", json={"username": "manager", "password": "wrong"}).status_code
-             for _ in range(6)]
-    assert codes[:5] == [401] * 5 and codes[5] == 429          # account locked after 5 wrong passwords
+    wrong = lambda: client.post("/api/auth/login", json={"username": "manager", "password": "wrong"})
+    first, second, third = wrong(), wrong(), wrong()
+    assert first.status_code == second.status_code == 401
+    assert first.json["error"] == "Incorrect username or password" and "retry_after" not in first.json
+    assert third.status_code == 401 and third.json["retry_after"] == 30 and "Wait 30 seconds" in third.json["error"]
+    blocked = client.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"})
+    assert blocked.status_code == 429 and 0 < blocked.json["retry_after"] <= 30   # even the right password waits
+    with app.app_context():                                                       # the wait has passed
+        from backend.models import User
+        u = User.query.filter_by(username="manager").one()
+        u.locked_until = None
+        db.session.commit()
+    fourth = wrong()
+    assert fourth.json["retry_after"] == 60
+    with app.app_context():
+        u = User.query.filter_by(username="manager").one()
+        u.locked_until = None
+        db.session.commit()
+    fifth = wrong()
+    assert fifth.json["retry_after"] == 600 and "10 min" in fifth.json["error"]    # 5th: locked 10 minutes
+
+
+def test_login_is_rate_limited_per_device(app):
+    app.config["FAILED_LOGINS_TO_BLOCK"] = 1000          # only the per-device login limit here
+    client = browser_client(app)
     many = [client.post("/api/auth/login", json={"username": f"nobody{i}", "password": "x"}).status_code
-            for i in range(20)]
+            for i in range(25)]
     assert 429 in many                                          # device limit across many usernames
+
+
+def test_device_guessing_many_accounts_is_blocked_and_manager_warned(app, manager):
+    app.config["FAILED_LOGINS_TO_BLOCK"] = 6
+    attacker = browser_client(app)
+    for i in range(7):
+        attacker.post("/api/auth/login", json={"username": f"user{i}", "password": "guess"})
+    r = attacker.get("/api/auth/me")
+    assert r.status_code == 403 and "blocked" in r.json["error"] and r.json["retry_after"] > 0
+    with app.app_context():
+        from backend.models import Alert, AuditLog
+        assert Alert.query.filter_by(alert_type="SECURITY").count() == 1
+        assert AuditLog.query.filter_by(action="BLOCKED DEVICE").count() == 1
+
+
+def test_every_api_route_is_rate_limited(app, manager):
+    app.config["API_RATE_LIMIT"] = 20
+    app.config["API_STRIKES_TO_BLOCK"] = 3
+    codes = [manager.get("/api/auth/me").status_code for _ in range(25)]
+    assert codes[:15] == [200] * 15                                  # (logging in also counted)
+    assert codes[-5:] == [429, 429, 429, 403, 403]                   # over the limit, then blocked
+    r = manager.get("/api/auth/me")
+    assert r.status_code == 403 and "blocked" in r.json["error"] and int(r.headers["Retry-After"]) > 0
+
+
+def test_text_is_cleaned_and_formats_checked(app, manager):
+    r = manager.post("/api/users", json={"full_name": "Asha\u202e\u0000 Juma ", "username": "asha01",
+                                         "password": "Temp1234"})
+    assert r.status_code == 201 and r.json["user"]["full_name"] == "Asha Juma"
+    assert manager.post("/api/users", json={"full_name": "B", "username": "bb01", "password": "Temp1234",
+                                            "email": "not-an-email"}).status_code == 400
+    assert manager.post("/api/users", json={"full_name": "B", "username": "bb01", "password": "Temp1234",
+                                            "phone": "<script>"}).status_code == 400
+    fuel = manager.get("/api/fuel-types").json["fuel_types"][0]
+    assert manager.put(f"/api/fuel-types/{fuel['id']}", json={"name": fuel["name"],
+                                                             "color": "red;background:url(x)"}).status_code == 400
 
 
 # 12. Bot protection ------------------------------------------------------------------------------
