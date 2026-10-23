@@ -32,6 +32,9 @@ def _database_url():
     # Some hosts (Heroku/Render) still hand out the old "postgres://" scheme.
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
+    # This project installs psycopg2-binary; select it explicitly with SQLAlchemy 2.1.
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     return url
 
 
