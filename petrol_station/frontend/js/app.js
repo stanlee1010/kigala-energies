@@ -799,6 +799,9 @@
    * role: "MANAGER" | "STAFF" | null (any logged-in user)
    */
   App.init = async function ({ role = null, title = "" } = {}) {
+    // Asked together (each trip to the server takes time); settings are only used once logged in.
+    const settings = App.get("/api/settings");
+    settings.catch(() => null);
     const me = await App.get("/api/auth/me");
     App.user = me.user;
     const onPasswordPage = location.pathname.endsWith("/change-password.html");
@@ -810,7 +813,7 @@
       location.href = App.home(App.user);
       return new Promise(() => {});
     }
-    const s = await App.get("/api/settings");
+    const s = await settings;
     App.station = s.station;
     App.settings = s.settings;
     App.demo = !!s.demo;
@@ -828,7 +831,8 @@
     renderOfflineBar();
     App.flushOutbox();
     setInterval(() => { if (readBox().length) App.flushOutbox(); }, 30000);
-    await syncClock();
+    // A known clock offset is good enough to show the page now; it is corrected in the background.
+    if (savedClock.station !== undefined && !App.demo) syncClock().then(tick); else await syncClock();   // training: paused clock
     tick();
     setInterval(tick, 1000);
     setInterval(syncClock, 5 * 60 * 1000);

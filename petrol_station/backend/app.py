@@ -6,6 +6,7 @@ Run for production:
     python serve.py            (Waitress, works on Windows and Linux)
     gunicorn -w 1 --threads 8 "backend.app:create_app()"
 """
+import hashlib
 import logging
 import os
 import re
@@ -14,9 +15,11 @@ from decimal import Decimal
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, redirect, request, send_from_directory
+from flask.sessions import SecureCookieSessionInterface
 from sqlalchemy import event
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.exceptions import HTTPException
+from werkzeug.security import safe_join
 
 from .config import Config
 from .extensions import db
@@ -58,10 +61,23 @@ def _tune_sqlite(engine):
         cur.close()
 
 
+class ApiOnlySessionInterface(SecureCookieSessionInterface):
+    """Only API replies send or refresh the login cookie.
+
+    Page files (HTML, CSS, JS, images) then carry nothing personal, so a CDN may keep one copy for
+    everyone. Every page calls the API, which keeps the login fresh.
+    """
+
+    def save_session(self, app, session, response):
+        if request.path.startswith("/api/"):
+            super().save_session(app, session, response)
+
+
 def create_app(config_class=Config):
     frontend_dir = Path(config_class.FRONTEND_DIR)
     app = Flask(__name__, static_folder=None)
     app.config.from_object(config_class)
+    app.session_interface = ApiOnlySessionInterface()
     if app.config["VERCEL"]:
         if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:"):
             raise RuntimeError("Vercel deployments require DATABASE_URL to point to a persistent PostgreSQL database")
@@ -137,7 +153,7 @@ def create_app(config_class=Config):
         if request.path.startswith("/api/"):
             return jsonify({"error": exc.description}), exc.code
         if exc.code == 404:
-            return send_from_directory(frontend_dir, "404.html"), 404
+            return send_page("404.html"), 404
         return exc
 
     @app.errorhandler(Exception)
@@ -171,12 +187,34 @@ def create_app(config_class=Config):
             # Pages, scripts and styles: always check for a newer version (cheap 304 if unchanged),
             # so every phone gets updates immediately instead of an old cached copy.
             response.headers["Cache-Control"] = "no-cache"
+            # Vercel: keep the files in the nearby CDN so pages open fast (each deploy starts a fresh
+            # cache, so updates still show at once). Never for anything tied to a login.
+            if (app.config.get("VERCEL") and response.status_code == 200 and "Set-Cookie" not in response.headers
+                    and "Cookie" not in response.headers.get("Vary", "")):
+                response.headers["Vercel-CDN-Cache-Control"] = "max-age=31536000"
         return response
 
     # ------------------------------------------------------------ frontend
+    etags = {}
+
+    def send_page(path):
+        """A frontend file whose ETag comes from its contents (file times are not kept on every host)."""
+        safe = safe_join(str(frontend_dir), path)
+        target = Path(safe) if safe else None
+        try:
+            stat = target.stat()
+            if not target.is_file():
+                raise OSError
+        except (OSError, AttributeError):
+            return send_from_directory(frontend_dir, path)   # 404 page
+        key = (path, stat.st_mtime, stat.st_size)
+        if etags.get(path, (None,))[0] != key:
+            etags[path] = (key, hashlib.sha256(target.read_bytes()).hexdigest()[:20])
+        return send_from_directory(frontend_dir, path, etag=etags[path][1])
+
     @app.get("/")
     def index():
-        return send_from_directory(frontend_dir, "index.html")
+        return send_page("index.html")
 
     @app.get("/<path:path>")
     def frontend(path):
@@ -185,7 +223,7 @@ def create_app(config_class=Config):
         target = frontend_dir / path
         if target.is_dir():
             path = f"{path.rstrip('/')}/index.html"
-        return send_from_directory(frontend_dir, path)
+        return send_page(path)
 
     @app.get("/healthz")
     def health():

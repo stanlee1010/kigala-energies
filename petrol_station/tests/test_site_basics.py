@@ -52,3 +52,28 @@ def test_privacy_policy_page(app):
     for topic in ("What information is kept", "Who can see it", "How long it is kept", "no advertising or tracking"):
         assert topic in body
     assert "/privacy.html" in (FRONT / "login.html").read_text(encoding="utf-8")
+
+
+def test_page_files_have_content_etags_and_come_back_304(app):
+    client = app.test_client()
+    r = client.get("/js/app.js")
+    assert r.status_code == 200 and r.headers["Cache-Control"] == "no-cache"
+    etag = r.headers["ETag"].strip('"')
+    assert len(etag) == 20                                              # from the file's contents, not its time
+    assert client.get("/js/app.js", headers={"If-None-Match": f'"{etag}"'}).status_code == 304
+    assert "Vercel-CDN-Cache-Control" not in r.headers                  # only on Vercel
+    assert client.get("/../backend/config.py").status_code == 404
+    assert client.get("/js/../../backend/config.py").status_code == 404
+
+
+def test_vercel_keeps_page_files_in_its_cdn_but_never_api_replies(app, manager):
+    app.config["VERCEL"] = True
+    client = app.test_client()
+    page = client.get("/staff/index.html")
+    assert page.headers["Vercel-CDN-Cache-Control"] == "max-age=31536000"
+    mine = manager.get("/staff/index.html")                 # logged in: still nothing personal in the reply
+    assert "Set-Cookie" not in mine.headers and "Cookie" not in mine.headers.get("Vary", "")
+    assert manager.get("/api/auth/me").headers.get("Set-Cookie")   # the API keeps the login fresh
+    assert "Vercel-CDN-Cache-Control" not in client.get("/no-such-page.html").headers   # 404s are not kept
+    api = manager.get("/api/auth/me")
+    assert api.headers["Cache-Control"] == "no-store" and "Vercel-CDN-Cache-Control" not in api.headers
