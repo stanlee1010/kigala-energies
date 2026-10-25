@@ -112,12 +112,27 @@ def arg_date(name, default=None):
     return date_field(request.args.get(name), name, required=False) or default
 
 
-def validate_password(value):
+# Passwords people pick first - refused even when long enough (checked without letter case).
+COMMON_PASSWORDS = frozenset("""
+password password1 password12 password123 password1234 passw0rd p@ssw0rd p@ssword1 qwerty123 qwerty1234
+qwertyuiop1 abc12345 abcd1234 abc123456 1q2w3e4r 1qaz2wsx zaq12wsx letmein1 welcome1 welcome123
+admin123 admin1234 administrator1 manager1 manager123 director1 director123 changeme1 changeme123
+iloveyou1 sunshine1 football1 monkey123 dragon123 master123 trustno1 baseball1 superman1 princess1
+kigala123 kigala1234 kigalaenergies1 petrol123 diesel123 station123 tanzania1 dar12345 daressalaam1
+""".split())
+
+
+def validate_password(value, username=None, strong=False):
+    """strong: managers and the director (they control money and accounts) need 10+ characters."""
     value = value or ""
-    if len(value) < 8:
-        raise ApiError("Password must be at least 8 characters long")
+    minimum = 10 if strong else 8
+    if len(value) < minimum:
+        raise ApiError(f"Password must be at least {minimum} characters long")
     if value.isdigit() or value.isalpha():
         raise ApiError("Password must contain both letters and numbers")
+    lowered = value.lower()
+    if lowered in COMMON_PASSWORDS or (username and username.lower() in lowered):
+        raise ApiError("That password is too easy to guess. Choose another one")
     return value
 
 

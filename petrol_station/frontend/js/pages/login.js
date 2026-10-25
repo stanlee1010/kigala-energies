@@ -8,13 +8,21 @@
     .then((me) => { location.href = App.home(me.user); })
     .catch(() => null);
 
+  /** "next" is only followed to a page of this site (never e.g. /\evil.example, which browsers read as //evil.example). */
+  function sameSitePath(next) {
+    if (!next || !next.startsWith("/")) return null;
+    try {
+      const url = new URL(next, location.origin);
+      return url.origin === location.origin ? url.pathname + url.search + url.hash : null;
+    } catch (e) { return null; }
+  }
+
   async function login(credentials, url) {
     const { user } = await App.api("POST", url || "/api/auth/login", credentials, { allow401: true });
     // Saved copies of pages' data belong to whoever used this device before: forget them.
     if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage("clear-data");
-    const next = new URLSearchParams(location.search).get("next");
     if (user.must_change_password) location.href = "/change-password.html";
-    else location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : App.home(user);
+    else location.href = sameSitePath(new URLSearchParams(location.search).get("next")) || App.home(user);
   }
 
   // After too many wrong passwords the server says how long to wait: count it down on the button.

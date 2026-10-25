@@ -84,7 +84,9 @@ def test_reset_rebuilds_practice_data(demo_app):
     morning = trainee(demo_app, "demo.morning")
     shift = morning.get("/api/staff/my-shift").json["shift"]
     morning.post(f"/api/shifts/{shift['id']}/start")
-    assert demo_app.test_client().post("/api/demo/reset", json={}).status_code == 200
+    assert demo_app.test_client().post("/api/demo/reset", json={}).status_code == 401    # not signed in
+    assert morning.post("/api/demo/reset", json={}).status_code == 200
+    assert trainee(demo_app, "demo.night").post("/api/demo/reset", json={}).status_code == 429   # again at once
     morning = trainee(demo_app, "demo.morning")
     assert morning.get("/api/staff/my-shift").json["shift"]["status"] == "SCHEDULED"
 
@@ -109,7 +111,7 @@ def test_training_copies_people_per_shift_and_trainees_choose_pumps(tmp_path):
 
     real = create_app(RealConfig)
     manager = login(real, "manager", "ChangeMe123!")
-    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Manager123x"})
+    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9"})
     for t in manager.get("/api/shift-types").json["shift_types"]:
         assert manager.put(f"/api/shift-types/{t['id']}", json={"staff_needed": 2}).status_code == 200
     with real.app_context():

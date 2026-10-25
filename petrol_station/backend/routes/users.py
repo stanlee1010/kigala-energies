@@ -9,6 +9,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 from ..auth import current_user, manager_required
+from ..auth.routes import forget_failures
 from ..extensions import db
 from ..models import AuditLog, Shift, ShiftDefinition, ShiftStaff, Station, User
 from ..services import audit, roster
@@ -105,7 +106,7 @@ def create_user():
         phone=optional_phone(data), email=optional_email(data), role="STAFF",
         is_active=(data.get("status", "ACTIVE") != "DISABLED"), must_change_password=True, created_by=me.id,
     )
-    user.set_password(validate_password(data.get("password")))
+    user.set_password(validate_password(data.get("password"), username=username))
     db.session.add(user)
     db.session.flush()
     if _set_regular_shift(user, data):
@@ -182,10 +183,14 @@ def enable_user(user_id):
 def reset_password(user_id):
     me = current_user()
     user = _staff_member(me, user_id)
-    user.set_password(validate_password(body().get("password")))
+    if user.id == me.id:
+        # Your own password changes on Change password, which asks for the current one first.
+        raise ApiError("Use Change password for your own account (it asks for your current password)", 403)
+    user.set_password(validate_password(body().get("password"), username=user.username))
     user.must_change_password = True
     user.failed_login_count = 0
     user.locked_until = None
+    forget_failures(user.username)
     audit.log(user.station_id, me.id, "MANAGER RESET PASSWORD", "users", user.id)
     db.session.commit()
     return jsonify({"ok": True})

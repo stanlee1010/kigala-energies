@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from flask import Blueprint, jsonify, request
 
 from ..auth import current_user, director_required
+from ..auth.routes import forget_failures
 from ..calculations import ZERO, D, money
 from ..extensions import db
 from ..models import Pump, Station, User, UserStation
@@ -156,7 +157,7 @@ def create_manager():
     user = User(station_id=ids[0], username=username, full_name=require_text(data, "full_name", "Full name"),
                 phone=optional_phone(data), email=optional_email(data), role="MANAGER",
                 must_change_password=True, created_by=me.id)
-    user.set_password(validate_password(data.get("password")))
+    user.set_password(validate_password(data.get("password"), username=user.username))   # temporary: replaced at first login
     db.session.add(user)
     db.session.flush()
     set_manager_stations(user, ids)
@@ -210,8 +211,9 @@ def toggle_manager(user_id, action):
 def reset_manager_password(user_id):
     me = current_user()
     user = _manager(user_id)
-    user.set_password(validate_password(body().get("password")))
+    user.set_password(validate_password(body().get("password"), username=user.username))   # temporary: replaced at first login
     user.must_change_password, user.failed_login_count, user.locked_until = True, 0, None
+    forget_failures(user.username)
     audit.log(user.station_id, me.id, "DIRECTOR RESET MANAGER PASSWORD", "users", user.id)
     db.session.commit()
     return jsonify({"ok": True})

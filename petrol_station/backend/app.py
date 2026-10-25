@@ -195,7 +195,7 @@ def create_app(config_class=Config):
                                     "geolocation=(), microphone=(), payment=(), usb=(), camera=(self)")
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.4/; "
             "style-src 'self' 'unsafe-inline'; font-src 'self'; "
             "img-src 'self' data: blob:; connect-src 'self'; "
             "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
@@ -344,6 +344,8 @@ def register_cli(app):
         user.must_change_password = True
         user.is_active = True
         user.locked_until = None
+        from .auth.routes import forget_failures
+        forget_failures(user.username)
         db.session.commit()
         print("Password updated.")
 

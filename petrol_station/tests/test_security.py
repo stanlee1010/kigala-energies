@@ -90,7 +90,7 @@ def test_extra_fields_cannot_change_roles_or_status(app, manager):
     manager.post("/api/users", json={"full_name": "Sly", "username": "sly01", "password": "Temp1234",
                                      "must_change_password": False, "password_hash": "x", "station_id": 1})
     sly = login(app, "sly01", "Temp1234")
-    me = sly.get("/api/auth/me").json["user"]
+    me = sly.first_login_user
     assert me["role"] == "STAFF" and me["must_change_password"] is True
     day = sly.get("/api/time").json["now"][:10]
     e = sly.post("/api/expenses", json={"category_name": "Water", "description": "x", "amount": 100,
@@ -133,17 +133,15 @@ def test_wrong_passwords_get_a_growing_wait(app):
     assert third.status_code == 401 and third.json["retry_after"] == 30 and "Wait 30 seconds" in third.json["error"]
     blocked = client.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"})
     assert blocked.status_code == 429 and 0 < blocked.json["retry_after"] <= 30   # even the right password waits
-    with app.app_context():                                                       # the wait has passed
-        from backend.models import User
-        u = User.query.filter_by(username="manager").one()
-        u.locked_until = None
-        db.session.commit()
+    def wait_passes():
+        from backend.models import LoginFailure
+        with app.app_context():
+            LoginFailure.query.update({"locked_until": None})
+            db.session.commit()
+    wait_passes()
     fourth = wrong()
     assert fourth.json["retry_after"] == 60
-    with app.app_context():
-        u = User.query.filter_by(username="manager").one()
-        u.locked_until = None
-        db.session.commit()
+    wait_passes()
     fifth = wrong()
     assert fifth.json["retry_after"] == 600 and "10 min" in fifth.json["error"]    # 5th: locked 10 minutes
 

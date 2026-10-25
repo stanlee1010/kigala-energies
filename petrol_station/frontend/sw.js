@@ -160,7 +160,8 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname === "/healthz") return;
   if (url.pathname.startsWith("/api/")) {
     // Files, training and the clock are never kept: an old saved time would make the clock wrong.
-    if (/^\/api\/(attachments|reports|demo|time)/.test(url.pathname)) return;
+    // Salaries are private: never left on the device either.
+    if (/^\/api\/(attachments|reports|demo|time|salaries|salary-advances|staff\/my-salary)/.test(url.pathname)) return;
     event.respondWith(networkFirst(request, 8000));
   } else {
     event.respondWith(savedFirst(request));

@@ -38,7 +38,7 @@ def test_full_shift_refill_and_profit_workflow(app, manager):
     assert manager.post(f"/api/shifts/{shift_id}/assign", json={"user_id": john_id}).status_code == 200
 
     john = login(app, "john01", "Temp1234")
-    assert john.get("/api/auth/me").json["user"]["must_change_password"] is True
+    assert john.first_login_user["must_change_password"] is True
     # Staff cannot reach manager functions.
     assert john.get("/api/users").status_code == 403
     assert john.post("/api/prices", json={"fuel_type_id": fuels["DIESEL"], "price_per_litre": 1}).status_code == 403

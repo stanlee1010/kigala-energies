@@ -8,14 +8,14 @@ from .refill import (ADJUSTMENT_TYPES, STAFF_EDITABLE_REFILL_STATUSES, STOCK_REF
 from .shift import (DEFAULT_SHIFT_DEFINITIONS, FuelStock, PumpReading, Shift, ShiftCash, ShiftDefinition,
                     ShiftDeposit, ShiftStaff, ShiftStaffPump, WeeklyShiftChoice)
 from .salary import SALARY_ADVANCE_STATUSES, SalaryAdvance, SalaryMonth
-from .security import IpBlock, ProcessedRequest, RateCounter
+from .security import IpBlock, LoginFailure, ProcessedRequest, RateCounter, UserSession
 from .station import ROLES, Station, SystemSetting, User, UserStation
 
 __all__ = [
     "ALERT_TYPES", "ADJUSTMENT_TYPES", "DEFAULT_EXPENSE_CATEGORIES", "EXPENSE_STATUSES", "ROLES",
     "DEFAULT_SHIFT_DEFINITIONS", "STAFF_EDITABLE_REFILL_STATUSES", "STOCK_REFILL_STATUSES",
     "Alert", "Attachment", "AuditLog", "Expense", "ExpenseCategory", "FuelPrice", "FuelRefill",
-    "FuelStock", "FuelType", "IpBlock", "ProcessedRequest", "Pump", "RateCounter", "PumpReading", "RefillConfirmation", "Report",
+    "FuelStock", "FuelType", "IpBlock", "LoginFailure", "UserSession", "ProcessedRequest", "Pump", "RateCounter", "PumpReading", "RefillConfirmation", "Report",
     "ReportingPeriod", "SALARY_ADVANCE_STATUSES", "SalaryAdvance", "SalaryMonth", "Shift", "ShiftCash", "ShiftDefinition", "ShiftDeposit", "ShiftStaff", "ShiftStaffPump", "Station",
     "StockAdjustment", "StockThreshold", "Supplier", "SystemSetting", "Tank", "User", "UserStation", "WeeklyShiftChoice", "utcnow",
 ]

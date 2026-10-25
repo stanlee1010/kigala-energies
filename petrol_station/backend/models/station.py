@@ -1,3 +1,4 @@
+import hashlib
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..extensions import db
@@ -71,8 +72,9 @@ class User(TimestampMixin, SerializerMixin, db.Model):
 
     @property
     def session_stamp(self):
-        # Changes whenever the password changes, which invalidates old sessions.
-        return self.password_hash[-16:]
+        # Changes whenever the password changes, which invalidates old sessions. A digest, so the
+        # cookie never carries any part of the password hash itself.
+        return hashlib.sha256(self.password_hash.encode()).hexdigest()[:16]
 
 
 class UserStation(db.Model):

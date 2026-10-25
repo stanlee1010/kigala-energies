@@ -37,3 +37,32 @@ class ProcessedRequest(db.Model):
 
     key = db.Column(db.String(64), primary_key=True)
     created_at = db.Column(db.BigInteger, nullable=False)        # unix seconds
+
+
+class LoginFailure(db.Model):
+    """Wrong passwords for one username from one device (ip), or from all devices (ip = "*").
+
+    Kept by USERNAME, whether or not such an account exists, so a made-up username behaves
+    exactly like a real one (the answers never reveal which usernames exist), and one
+    device guessing a password cannot lock the real person out on their own device.
+    """
+
+    __tablename__ = "login_failures"
+
+    username = db.Column(db.String(60), primary_key=True)
+    ip = db.Column(db.String(64), primary_key=True)
+    count = db.Column(db.Integer, nullable=False, default=0)
+    locked_until = db.Column(db.DateTime)                       # UTC
+    updated_at = db.Column(db.DateTime, nullable=False)          # UTC
+
+
+class UserSession(db.Model):
+    """One login on one device. The session cookie names it; logging out ends it on the server,
+    so a copy of the cookie stops working too."""
+
+    __tablename__ = "user_sessions"
+
+    id = db.Column(db.String(64), primary_key=True)              # random, unguessable
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False)          # UTC
+    ended_at = db.Column(db.DateTime)                            # UTC; set at logout

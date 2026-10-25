@@ -71,6 +71,10 @@
     if (copyAt !== null) { App.offlineCopyAt = copyAt; renderOfflineBar(); }
     let payload = null;
     try { payload = await res.json(); } catch (e) { /* non-JSON */ }
+    if (res.status === 403 && payload && payload.must_change_password && !location.pathname.endsWith("/change-password.html")) {
+      location.href = "/change-password.html";      // a temporary password: the server allows nothing else
+      throw new Error("Please log in");
+    }
     if (res.status === 401 && !opts.allow401) {
       App.forgetBoot();
       location.href = "/login.html?next=" + encodeURIComponent(location.pathname + location.search);

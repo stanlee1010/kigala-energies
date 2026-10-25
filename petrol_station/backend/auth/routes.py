@@ -1,20 +1,86 @@
 from datetime import timedelta
 
-from flask import Blueprint, current_app, jsonify, session
+from flask import Blueprint, current_app, jsonify
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..extensions import db
-from ..models import Station, User, utcnow
+from ..models import LoginFailure, Station, User, utcnow
 from ..routes.common import ApiError, body, require_text, validate_password
 from ..services import audit, guard, ratelimit
 from ..services.audit import client_ip
-from . import current_user, login_required, login_user, station_in_use
+from . import current_user, end_session, login_required, login_user, station_in_use
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 MAX_FAILED_LOGINS = 5
 LOCK_MINUTES = 10
 # Wait after the 3rd and 4th wrong password in a row (seconds); the 5th locks for LOCK_MINUTES.
+# These count per username AND device, so someone guessing cannot lock the real person out.
 SHORT_WAITS = {3: 30, 4: 60}
+# Across every device: this many wrong passwords for one username within an hour locks it for a while
+# (stops guessing spread over many devices; one device is blocked by the guard well before this).
+ACCOUNT_FAILURES_TO_LOCK = 20
+ACCOUNT_LOCK_MINUTES = 15
+ALL_DEVICES = "*"
+_decoy = {}
+
+
+def _check_decoy(password):
+    """Unknown username: spend the same time as a real password check, so timing reveals nothing."""
+    if "hash" not in _decoy:
+        _decoy["hash"] = generate_password_hash("not-a-real-account-password")
+    check_password_hash(_decoy["hash"], password)
+    return False
+
+
+def _failure_row(username, ip):
+    row = db.session.get(LoginFailure, (username, ip))
+    if row is None:
+        row = LoginFailure(username=username, ip=ip, count=0, updated_at=utcnow())
+        db.session.add(row)
+    return row
+
+
+def _locked_for(username, ip, now):
+    """Seconds this username is still locked on this device (or on every device), else 0."""
+    left = 0
+    for key in (ip, ALL_DEVICES):
+        row = db.session.get(LoginFailure, (username, key))
+        if row is not None and row.locked_until and row.locked_until > now:
+            left = max(left, (row.locked_until - now).total_seconds())
+    return left
+
+
+def _count_failure(username, ip, now):
+    """One wrong password for username from this device. Returns seconds to wait (or None)."""
+    device, every = _failure_row(username, ip), _failure_row(username, ALL_DEVICES)
+    device.count += 1
+    device.updated_at = now
+    if device.count >= MAX_FAILED_LOGINS:
+        wait, device.count = LOCK_MINUTES * 60, 0
+    else:
+        wait = SHORT_WAITS.get(device.count)
+    if wait:
+        device.locked_until = now + timedelta(seconds=wait)
+    if every.updated_at < now - timedelta(hours=1):
+        every.count = 0
+    every.count += 1
+    every.updated_at = now
+    if every.count >= ACCOUNT_FAILURES_TO_LOCK:
+        every.count, every.locked_until = 0, now + timedelta(minutes=ACCOUNT_LOCK_MINUTES)
+        wait = max(wait or 0, ACCOUNT_LOCK_MINUTES * 60)
+    try:
+        db.session.commit()
+    except IntegrityError:          # another copy added the same row at the same moment: count it again
+        db.session.rollback()
+        return _count_failure(username, ip, now)
+    return wait
+
+
+def forget_failures(username):
+    """A new password was set for this person: earlier wrong guesses no longer count."""
+    LoginFailure.query.filter_by(username=username.lower()).delete(synchronize_session=False)
 
 
 def _wait_text(seconds):
@@ -70,28 +136,19 @@ def login():
                        retry_after=wait)
     username = require_text(data, "username", max_len=60).lower()
     password = str(data.get("password") or "")[:200]
-    user = User.query.filter(db.func.lower(User.username) == username).first()
+    ip = client_ip()[:64]
     now = utcnow()
-
-    if user and user.locked_until and user.locked_until > now:
-        left = (user.locked_until - now).total_seconds()
+    # Waits and locks are kept by username for real and made-up names alike: same answers either way.
+    left = _locked_for(username, ip, now)
+    if left:
         raise ApiError(f"Too many wrong passwords. Wait {_wait_text(left)} before trying again.", 429,
                        retry_after=left)
+    user = User.query.filter(db.func.lower(User.username) == username).first()
     if current_app.config.get("DEMO_MODE") and user is not None and user.role != "STAFF":
         raise ApiError("The training portal is for staff practice only. Managers use the real system.", 403)
-    if user is None or not user.check_password(password):
-        wait = None
-        if user:
-            user.failed_login_count += 1
-            if user.failed_login_count >= MAX_FAILED_LOGINS:
-                wait = LOCK_MINUTES * 60
-                user.failed_login_count = 0
-            else:
-                wait = SHORT_WAITS.get(user.failed_login_count)
-            if wait:
-                user.locked_until = now + timedelta(seconds=wait)
-            db.session.commit()
-        guard.failed_login(client_ip(), user.station_id if user else None, username)
+    if not (user.check_password(password) if user else _check_decoy(password)):
+        wait = _count_failure(username, ip, now)
+        guard.failed_login(ip, user.station_id if user else None, username)
         if wait:
             raise ApiError(f"Incorrect username or password. Wait {_wait_text(wait)} before trying again.", 401,
                            retry_after=wait)
@@ -101,6 +158,7 @@ def login():
     if not station_in_use(user):
         raise ApiError("Your station has been removed by the director. Please contact the manager.", 403)
 
+    forget_failures(username)
     user.failed_login_count = 0
     user.locked_until = None
     user.last_login_at = now
@@ -112,7 +170,7 @@ def login():
 
 @bp.post("/logout")
 def logout():
-    session.clear()
+    end_session()
     return jsonify({"ok": True})
 
 
@@ -132,7 +190,7 @@ def change_password():
     data = body()
     if not user.check_password(data.get("current_password") or ""):
         raise ApiError("Current password is incorrect", 400)
-    new = validate_password(data.get("new_password"))
+    new = validate_password(data.get("new_password"), username=user.username, strong=user.role != "STAFF")
     if user.check_password(new):
         raise ApiError("The new password must be different from the current one", 400)
     user.set_password(new)

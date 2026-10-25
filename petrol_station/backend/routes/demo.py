@@ -121,8 +121,16 @@ def setup():
 
 @bp.post("/reset")
 def reset():
-    """Start a training session with fresh practice data (anyone on the training portal)."""
+    """Start a training session with fresh practice data (a signed-in trainee; once per 10 minutes
+    per device, since a rebuild takes a while and the portal is on the open internet)."""
     _require_demo()
+    from ..auth import current_user
+    if current_user() is None:
+        raise ApiError("Choose a practice shift first, then reset from the training banner.", 401)
+    wait = ratelimit.hit(f"demo-reset:{client_ip()}", 1, 600)
+    if wait:
+        raise ApiError(f"Practice data was reset a moment ago. Try again in {max(1, wait // 60)} minute(s).", 429,
+                       retry_after=wait)
     from ..services.bootstrap import training_lock
     with training_lock():
         demo.reset()

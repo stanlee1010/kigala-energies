@@ -36,10 +36,20 @@ def browser_client(app):
     return client
 
 
-def login(app, username, password):
+def login(app, username, password, first_login=False):
+    """Log in. A temporary password only allows changing it (see test_security); most tests are not
+    about that, so the first-login password change is marked done for them unless first_login=True.
+    client.first_login_user is the user as the server returned it at login."""
     client = browser_client(app)
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.json
+    client.first_login_user = r.json["user"]
+    if r.json["user"]["must_change_password"] and not first_login:
+        from backend.models import User
+        with app.app_context():
+            user = db.session.get(User, r.json["user"]["id"])
+            user.must_change_password = False
+            db.session.commit()
     return client
 
 

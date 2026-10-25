@@ -8,7 +8,7 @@ def director(app):
 
 def test_director_adds_station_and_manager_with_two_stations(app, manager):
     d = director(app)
-    me = d.get("/api/auth/me").json["user"]
+    me = d.first_login_user
     assert me["role"] == "DIRECTOR" and me["must_change_password"] is True
 
     # Director adds a second location: it gets the standard set-up.
