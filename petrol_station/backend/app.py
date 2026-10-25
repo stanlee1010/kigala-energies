@@ -162,8 +162,28 @@ def create_app(config_class=Config):
         app.logger.exception("Unhandled error")
         return jsonify({"error": "Something went wrong on the server. The error has been logged."}), 500
 
+    versions = {"checked": 0.0, "stamp": None, "v": ""}
+
+    def app_version():
+        """A short fingerprint of every frontend file. File times are looked at every 10 seconds
+        (files can change without a server restart); the contents are hashed only when they moved."""
+        now = time.monotonic()
+        if versions["v"] and now - versions["checked"] < 10:
+            return versions["v"]
+        versions["checked"] = now
+        files = sorted(f for f in frontend_dir.rglob("*") if f.is_file())
+        stamp = [(f.as_posix(), f.stat().st_mtime, f.stat().st_size) for f in files]
+        if stamp != versions["stamp"]:
+            digest = hashlib.sha256()
+            for f in files:
+                digest.update(f.relative_to(frontend_dir).as_posix().encode() + b"\0" + f.read_bytes())
+            versions["stamp"], versions["v"] = stamp, digest.hexdigest()[:12]
+        return versions["v"]
+
     @app.after_request
     def security_headers(response):
+        # Changes whenever a page file changes: phones then refresh their saved copies (see sw.js).
+        response.headers["X-App-Version"] = app_version()
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "same-origin")

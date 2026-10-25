@@ -88,3 +88,19 @@ def test_pages_ask_the_browser_to_build_the_next_page_early(app):
     assert rules.status_code == 200 and rules.mimetype == "application/speculationrules+json"
     excluded = str(rules.json)
     assert all(x in excluded for x in ("/api/*", "/login.html", "/change-password.html"))
+
+
+def test_every_reply_says_which_version_of_the_site_it_runs(app, manager):
+    page = app.test_client().get("/staff/index.html").headers["X-App-Version"]
+    api = manager.get("/api/auth/me").headers["X-App-Version"]
+    assert page == api and len(page) == 12           # phones compare it to refresh their saved copies
+
+
+def test_service_worker_saves_every_page_and_script():
+    import re
+    front = Path(__file__).resolve().parents[1] / "frontend"
+    listed = set(re.findall(r'"(/[^"]+)"', (front / "sw.js").read_text(encoding="utf-8").split("const PRECACHE")[1].split("];")[0]))
+    files = {"/" + f.relative_to(front).as_posix() for f in front.rglob("*")
+             if f.suffix in (".html", ".js", ".css") and f.name not in ("sw.js", "training.html", "training.js")}   # training: no service worker
+    assert files - listed == set(), "add these to PRECACHE in sw.js"
+    assert all((front / u.lstrip("/")).is_file() for u in listed)
