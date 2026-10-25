@@ -284,3 +284,39 @@ class ProductionWithoutSecret(TestConfig):
 def test_production_needs_a_secret_key_from_the_environment():
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         create_app(ProductionWithoutSecret)
+
+
+# Several running copies (Vercel): counts and blocks are shared through the database --------------
+def _copies(tmp_path, n=2, **settings):
+    class Shared(TestConfig):
+        SQLALCHEMY_DATABASE_URI = "sqlite:///" + (tmp_path / "shared.db").as_posix()
+        SHARED_RATE_LIMITS = True
+    for key, value in settings.items():
+        setattr(Shared, key, value)
+    return [create_app(Shared) for _ in range(n)]
+
+
+def test_rate_limit_is_shared_between_running_copies(tmp_path):
+    one, two = _copies(tmp_path, API_RATE_LIMIT=10, API_STRIKES_TO_BLOCK=1000)
+    a, b = browser_client(one), browser_client(two)
+    codes = [(a if i % 2 else b).get("/api/auth/me").status_code for i in range(14)]   # spread over both
+    assert codes.count(401) == 10 and codes[-1] == 429          # 10 in total, not 10 per copy
+
+
+def test_a_block_made_by_one_copy_applies_in_every_copy(tmp_path):
+    one, two = _copies(tmp_path, FAILED_LOGINS_TO_BLOCK=4)
+    attacker_on_one = browser_client(one)
+    for i in range(5):
+        attacker_on_one.post("/api/auth/login", json={"username": f"user{i}", "password": "guess"})
+    r = browser_client(two).get("/api/auth/me")                 # same device, other copy
+    assert r.status_code == 403 and "blocked" in r.json["error"]
+    with two.app_context():
+        from backend.models import Alert, IpBlock
+        assert IpBlock.query.count() == 1 and Alert.query.filter_by(alert_type="SECURITY").count() == 1
+
+
+def test_shared_counts_survive_a_failed_request(tmp_path):
+    (one,) = _copies(tmp_path, n=1, LOGIN_RATE_LIMIT=3, FAILED_LOGINS_TO_BLOCK=1000)
+    client = browser_client(one)
+    codes = [client.post("/api/auth/login", json={"username": "x", "password": "y"}).status_code for _ in range(5)]
+    assert codes == [401, 401, 401, 429, 429]                   # failed logins (rolled back) still counted

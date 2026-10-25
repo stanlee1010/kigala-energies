@@ -82,6 +82,9 @@ class Config:
     API_STRIKES_TO_BLOCK = int(os.environ.get("API_STRIKES_TO_BLOCK", "5"))
     FAILED_LOGINS_TO_BLOCK = int(os.environ.get("FAILED_LOGINS_TO_BLOCK", "15"))
     IP_BLOCK_MINUTES = int(os.environ.get("IP_BLOCK_MINUTES", "30"))
+    # Keep those counts and blocks in the database so every running copy shares them. On by
+    # default on Vercel (many copies); the station computer is one process and counts in memory.
+    SHARED_RATE_LIMITS = _bool("SHARED_RATE_LIMITS", VERCEL)
 
     FRONTEND_DIR = PROJECT_DIR / "frontend"
     UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", PROJECT_DIR / "uploads"))

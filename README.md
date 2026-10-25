@@ -92,7 +92,7 @@ Set `DATABASE_URL` to PostgreSQL or MySQL. Set `SESSION_COOKIE_SECURE=true` behi
 
 ## Security
 
-- **Rate limit on every API route** (`API_RATE_LIMIT`, default 300 requests/minute per device). A device that keeps going over it, or gets many passwords wrong across accounts, is **blocked for 30 minutes**. The manager gets a SECURITY warning and the block goes in the audit log (`services/guard.py`).
+- **Rate limit on every API route** (`API_RATE_LIMIT`, default 300 requests/minute per device). A device that keeps going over it, or gets many passwords wrong across accounts, is **blocked for 30 minutes**. The manager gets a SECURITY warning and the block goes in the audit log (`services/guard.py`). On Vercel (many copies of the app at once) the counts and blocks are kept in the database (`rate_counters`, `ip_blocks`), so every copy shares them (`SHARED_RATE_LIMITS`).
 - **Wrong passwords:** the 3rd and 4th wrong password in a row make you wait 30 s and 60 s; the 5th locks the account for 10 minutes. The login button counts down.
 - **Works without internet:** meter readings, online money and expense sheets saved offline stay on the device and are sent automatically when the connection is back (`App.api` outbox in `js/app.js`). On HTTPS, `sw.js` also keeps copies of the pages so they open offline.
 - **Many users at once:** SQLite runs in WAL mode with a busy timeout, and Waitress uses 16 threads. Tested with 30 people at once and no errors.

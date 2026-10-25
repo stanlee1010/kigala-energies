@@ -15,6 +15,20 @@ CREATE TABLE fuel_types (
 	UNIQUE (code)
 );
 
+CREATE TABLE ip_blocks (
+	ip VARCHAR(64) NOT NULL, 
+	blocked_until BIGINT NOT NULL, 
+	reason VARCHAR(255) NOT NULL, 
+	PRIMARY KEY (ip)
+);
+
+CREATE TABLE rate_counters (
+	key VARCHAR(120) NOT NULL, 
+	window_start BIGINT NOT NULL, 
+	count INTEGER NOT NULL, 
+	PRIMARY KEY (key, window_start)
+);
+
 CREATE TABLE stations (
 	id SERIAL NOT NULL, 
 	name VARCHAR(150) NOT NULL, 
@@ -40,25 +54,6 @@ CREATE TABLE expense_categories (
 	FOREIGN KEY(station_id) REFERENCES stations (id)
 );
 
-CREATE TABLE pumps (
-	id SERIAL NOT NULL, 
-	station_id INTEGER NOT NULL, 
-	fuel_type_id INTEGER NOT NULL, 
-	pump_number INTEGER NOT NULL, 
-	pump_name VARCHAR(60) NOT NULL, 
-	is_active BOOLEAN NOT NULL, 
-	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
-	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
-	PRIMARY KEY (id), 
-	CONSTRAINT uq_pump_name UNIQUE (station_id, pump_name), 
-	CONSTRAINT uq_pump_number UNIQUE (station_id, fuel_type_id, pump_number), 
-	CONSTRAINT ck_pump_number_positive CHECK (pump_number > 0), 
-	FOREIGN KEY(station_id) REFERENCES stations (id), 
-	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id)
-);
-CREATE INDEX ix_pumps_fuel_type_id ON pumps (fuel_type_id);
-CREATE INDEX ix_pumps_station_id ON pumps (station_id);
-
 CREATE TABLE shift_definitions (
 	id SERIAL NOT NULL, 
 	station_id INTEGER NOT NULL, 
@@ -73,7 +68,6 @@ CREATE TABLE shift_definitions (
 	CONSTRAINT uq_shift_definition_code UNIQUE (station_id, code), 
 	FOREIGN KEY(station_id) REFERENCES stations (id)
 );
-CREATE INDEX ix_shift_definitions_station_id ON shift_definitions (station_id);
 
 CREATE TABLE suppliers (
 	id SERIAL NOT NULL, 
@@ -87,6 +81,43 @@ CREATE TABLE suppliers (
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_supplier_name UNIQUE (station_id, name), 
 	FOREIGN KEY(station_id) REFERENCES stations (id)
+);
+
+CREATE TABLE tanks (
+	id SERIAL NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	fuel_type_id INTEGER NOT NULL, 
+	tank_number INTEGER NOT NULL, 
+	name VARCHAR(60) NOT NULL, 
+	capacity_litres NUMERIC(16, 3) NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_tank_number UNIQUE (station_id, fuel_type_id, tank_number), 
+	CONSTRAINT ck_tank_number_positive CHECK (tank_number > 0), 
+	CONSTRAINT ck_tank_capacity_positive CHECK (capacity_litres > 0), 
+	FOREIGN KEY(station_id) REFERENCES stations (id), 
+	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id)
+);
+
+CREATE TABLE pumps (
+	id SERIAL NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	fuel_type_id INTEGER NOT NULL, 
+	pump_number INTEGER NOT NULL, 
+	pump_name VARCHAR(60) NOT NULL, 
+	tank_id INTEGER, 
+	is_active BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_pump_name UNIQUE (station_id, pump_name), 
+	CONSTRAINT uq_pump_number UNIQUE (station_id, fuel_type_id, pump_number), 
+	CONSTRAINT ck_pump_number_positive CHECK (pump_number > 0), 
+	FOREIGN KEY(station_id) REFERENCES stations (id), 
+	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id), 
+	FOREIGN KEY(tank_id) REFERENCES tanks (id)
 );
 
 CREATE TABLE users (
@@ -108,13 +139,11 @@ CREATE TABLE users (
 	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
 	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
 	PRIMARY KEY (id), 
-	CONSTRAINT ck_users_role CHECK (role IN ('STAFF','MANAGER')), 
+	CONSTRAINT ck_users_role CHECK (role IN ('STAFF','MANAGER','DIRECTOR')), 
 	FOREIGN KEY(station_id) REFERENCES stations (id), 
 	FOREIGN KEY(created_by) REFERENCES users (id), 
 	FOREIGN KEY(default_shift_definition_id) REFERENCES shift_definitions (id)
 );
-CREATE UNIQUE INDEX ix_users_username ON users (username);
-CREATE INDEX ix_users_station_id ON users (station_id);
 
 CREATE TABLE attachments (
 	id SERIAL NOT NULL, 
@@ -149,8 +178,6 @@ CREATE TABLE audit_logs (
 	FOREIGN KEY(station_id) REFERENCES stations (id), 
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
-CREATE INDEX ix_audit_record ON audit_logs (table_name, record_id);
-CREATE INDEX ix_audit_station_time ON audit_logs (station_id, created_at);
 
 CREATE TABLE reporting_periods (
 	id SERIAL NOT NULL, 
@@ -226,7 +253,6 @@ CREATE TABLE shifts (
 	FOREIGN KEY(submitted_by) REFERENCES users (id), 
 	FOREIGN KEY(closed_by) REFERENCES users (id)
 );
-CREATE INDEX ix_shifts_date ON shifts (station_id, shift_date);
 
 CREATE TABLE stock_thresholds (
 	id SERIAL NOT NULL, 
@@ -257,7 +283,31 @@ CREATE TABLE system_settings (
 	FOREIGN KEY(station_id) REFERENCES stations (id), 
 	FOREIGN KEY(updated_by) REFERENCES users (id)
 );
-CREATE INDEX ix_system_settings_station_id ON system_settings (station_id);
+
+CREATE TABLE user_stations (
+	id SERIAL NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_user_station UNIQUE (user_id, station_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, 
+	FOREIGN KEY(station_id) REFERENCES stations (id)
+);
+
+CREATE TABLE weekly_shift_choices (
+	id SERIAL NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	week_start DATE NOT NULL, 
+	shift_definition_id INTEGER NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_weekly_choice_user_week UNIQUE (user_id, week_start), 
+	FOREIGN KEY(station_id) REFERENCES stations (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id), 
+	FOREIGN KEY(shift_definition_id) REFERENCES shift_definitions (id)
+);
 
 CREATE TABLE alerts (
 	id SERIAL NOT NULL, 
@@ -283,8 +333,6 @@ CREATE TABLE alerts (
 	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id), 
 	FOREIGN KEY(resolved_by) REFERENCES users (id)
 );
-CREATE INDEX ix_alerts_open ON alerts (station_id, is_resolved, created_at);
-CREATE INDEX ix_alerts_dedupe ON alerts (station_id, dedupe_key, is_resolved);
 
 CREATE TABLE expenses (
 	id SERIAL NOT NULL, 
@@ -313,7 +361,6 @@ CREATE TABLE expenses (
 	FOREIGN KEY(entered_by) REFERENCES users (id), 
 	FOREIGN KEY(approved_by) REFERENCES users (id)
 );
-CREATE INDEX ix_expenses_date ON expenses (station_id, expense_date);
 
 CREATE TABLE fuel_prices (
 	id SERIAL NOT NULL, 
@@ -334,13 +381,13 @@ CREATE TABLE fuel_prices (
 	FOREIGN KEY(reporting_period_id) REFERENCES reporting_periods (id), 
 	FOREIGN KEY(set_by) REFERENCES users (id)
 );
-CREATE INDEX ix_fuel_prices_lookup ON fuel_prices (station_id, fuel_type_id, created_at);
 
 CREATE TABLE fuel_refills (
 	id SERIAL NOT NULL, 
 	station_id INTEGER NOT NULL, 
 	shift_id INTEGER, 
 	fuel_type_id INTEGER NOT NULL, 
+	tank_id INTEGER, 
 	supplier_id INTEGER, 
 	refill_date DATE NOT NULL, 
 	refill_time TIME WITHOUT TIME ZONE NOT NULL, 
@@ -366,13 +413,12 @@ CREATE TABLE fuel_refills (
 	FOREIGN KEY(station_id) REFERENCES stations (id), 
 	FOREIGN KEY(shift_id) REFERENCES shifts (id), 
 	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id), 
+	FOREIGN KEY(tank_id) REFERENCES tanks (id), 
 	FOREIGN KEY(supplier_id) REFERENCES suppliers (id), 
 	FOREIGN KEY(recorded_by) REFERENCES users (id), 
 	FOREIGN KEY(confirmed_by) REFERENCES users (id), 
 	FOREIGN KEY(approved_by) REFERENCES users (id)
 );
-CREATE INDEX ix_refills_date ON fuel_refills (station_id, refill_date);
-CREATE INDEX ix_fuel_refills_shift_id ON fuel_refills (shift_id);
 
 CREATE TABLE fuel_stock (
 	id SERIAL NOT NULL, 
@@ -403,7 +449,6 @@ CREATE TABLE fuel_stock (
 	FOREIGN KEY(shift_id) REFERENCES shifts (id), 
 	FOREIGN KEY(recorded_by) REFERENCES users (id)
 );
-CREATE INDEX ix_fuel_stock_shift_id ON fuel_stock (shift_id);
 
 CREATE TABLE pump_readings (
 	id SERIAL NOT NULL, 
@@ -411,6 +456,7 @@ CREATE TABLE pump_readings (
 	shift_id INTEGER NOT NULL, 
 	pump_id INTEGER NOT NULL, 
 	fuel_type_id INTEGER NOT NULL, 
+	tank_id INTEGER, 
 	opening_meter NUMERIC(18, 3) NOT NULL, 
 	closing_meter NUMERIC(18, 3), 
 	fuel_sold NUMERIC(16, 3) NOT NULL, 
@@ -431,11 +477,27 @@ CREATE TABLE pump_readings (
 	FOREIGN KEY(shift_id) REFERENCES shifts (id), 
 	FOREIGN KEY(pump_id) REFERENCES pumps (id), 
 	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id), 
+	FOREIGN KEY(tank_id) REFERENCES tanks (id), 
 	FOREIGN KEY(recorded_by) REFERENCES users (id), 
 	FOREIGN KEY(updated_by) REFERENCES users (id)
 );
-CREATE INDEX ix_pump_readings_pump_id ON pump_readings (pump_id);
-CREATE INDEX ix_pump_readings_shift_id ON pump_readings (shift_id);
+
+CREATE TABLE shift_cash (
+	id SERIAL NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	shift_id INTEGER NOT NULL, 
+	online_expression VARCHAR(1000) NOT NULL, 
+	online_total NUMERIC(18, 2) NOT NULL, 
+	updated_by INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT ck_online_total_positive CHECK (online_total >= 0), 
+	FOREIGN KEY(station_id) REFERENCES stations (id), 
+	UNIQUE (shift_id), 
+	FOREIGN KEY(shift_id) REFERENCES shifts (id), 
+	FOREIGN KEY(updated_by) REFERENCES users (id)
+);
 
 CREATE TABLE shift_deposits (
 	id SERIAL NOT NULL, 
@@ -458,7 +520,6 @@ CREATE TABLE shift_deposits (
 	FOREIGN KEY(shift_id) REFERENCES shifts (id), 
 	FOREIGN KEY(recorded_by) REFERENCES users (id)
 );
-CREATE INDEX ix_shift_deposits_shift_id ON shift_deposits (shift_id);
 
 CREATE TABLE shift_staff (
 	id SERIAL NOT NULL, 
@@ -474,13 +535,12 @@ CREATE TABLE shift_staff (
 	FOREIGN KEY(user_id) REFERENCES users (id), 
 	FOREIGN KEY(assigned_by) REFERENCES users (id)
 );
-CREATE INDEX ix_shift_staff_shift_id ON shift_staff (shift_id);
-CREATE INDEX ix_shift_staff_user_id ON shift_staff (user_id);
 
 CREATE TABLE stock_adjustments (
 	id SERIAL NOT NULL, 
 	station_id INTEGER NOT NULL, 
 	fuel_type_id INTEGER NOT NULL, 
+	tank_id INTEGER, 
 	shift_id INTEGER, 
 	adjustment_type VARCHAR(20) NOT NULL, 
 	quantity_litres NUMERIC(16, 3) NOT NULL, 
@@ -493,6 +553,7 @@ CREATE TABLE stock_adjustments (
 	CONSTRAINT ck_adjustment_type CHECK (adjustment_type IN ('OPENING_BALANCE','DIP_CORRECTION','LOSS','RECONCILIATION','OTHER')), 
 	FOREIGN KEY(station_id) REFERENCES stations (id), 
 	FOREIGN KEY(fuel_type_id) REFERENCES fuel_types (id), 
+	FOREIGN KEY(tank_id) REFERENCES tanks (id), 
 	FOREIGN KEY(shift_id) REFERENCES shifts (id), 
 	FOREIGN KEY(created_by) REFERENCES users (id)
 );
@@ -512,7 +573,6 @@ CREATE TABLE refill_confirmations (
 	FOREIGN KEY(refill_id) REFERENCES fuel_refills (id), 
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
-CREATE INDEX ix_refill_confirmations_refill_id ON refill_confirmations (refill_id);
 
 CREATE TABLE shift_staff_pumps (
 	id SERIAL NOT NULL, 

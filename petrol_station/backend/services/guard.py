@@ -8,7 +8,11 @@
 
 Blocks end by themselves. Real addresses only come from client_ip() (proxy headers are only
 trusted with TRUST_PROXY), so a client cannot dodge this by faking a header.
+
+With SHARED_RATE_LIMITS (Vercel: many copies of the app) the counts and the blocked list live in
+the database (rate_counters, ip_blocks), so every copy sees the same blocks; otherwise in memory.
 """
+import logging
 import threading
 import time
 
@@ -17,6 +21,7 @@ from flask import current_app
 from . import ratelimit
 
 STRIKE_WINDOW = 600
+log = logging.getLogger(__name__)
 _blocked = {}            # ip -> (unblock_at monotonic, reason)
 _lock = threading.Lock()
 
@@ -25,6 +30,8 @@ def blocked_for(ip):
     """Seconds this IP is still blocked for (0 = not blocked)."""
     if not ip:
         return 0
+    if ratelimit.shared():
+        return _blocked_for_db(ip)
     with _lock:
         entry = _blocked.get(ip)
         if entry is None:
@@ -38,9 +45,12 @@ def blocked_for(ip):
 
 def block(ip, reason, station_id=None, username=None):
     minutes = current_app.config["IP_BLOCK_MINUTES"]
-    with _lock:
-        already = ip in _blocked and _blocked[ip][0] > time.monotonic()
-        _blocked[ip] = (time.monotonic() + minutes * 60, reason)
+    if ratelimit.shared():
+        already = _block_db(ip, minutes, reason)
+    else:
+        with _lock:
+            already = ip in _blocked and _blocked[ip][0] > time.monotonic()
+            _blocked[ip] = (time.monotonic() + minutes * 60, reason)
     if already:
         return
     from ..extensions import db
@@ -82,3 +92,43 @@ def failed_login(ip, station_id=None, username=None):
 def reset():
     with _lock:
         _blocked.clear()
+
+
+# ---------------------------------------------------------------- shared (database) store
+# Own connection: a block is kept even if the request that triggered it is rolled back.
+
+def _blocked_for_db(ip):
+    from ..extensions import db
+    from ..models.security import IpBlock
+    table = IpBlock.__table__
+    try:
+        with db.engine.connect() as conn:
+            until = conn.execute(table.select().with_only_columns(table.c.blocked_until)
+                                 .where(table.c.ip == ip[:64])).scalar()
+    except Exception:
+        log.exception("Shared block list unavailable; allowing the request")
+        return 0
+    left = (until or 0) - time.time()
+    return int(left) + 1 if left > 0 else 0
+
+
+def _block_db(ip, minutes, reason):
+    """Block (or extend the block of) an IP. Returns True if it was already blocked."""
+    from ..extensions import db
+    from ..models.security import IpBlock
+    table = IpBlock.__table__
+    now = time.time()
+    try:
+        with db.engine.begin() as conn:
+            until = conn.execute(table.select().with_only_columns(table.c.blocked_until)
+                                 .where(table.c.ip == ip[:64])).scalar()
+            values = {"blocked_until": int(now + minutes * 60), "reason": reason[:255]}
+            if until is None:
+                conn.execute(table.insert().values(ip=ip[:64], **values))
+            else:
+                conn.execute(table.update().where(table.c.ip == ip[:64]).values(**values))
+            conn.execute(table.delete().where(table.c.blocked_until < int(now)))   # tidy expired blocks
+    except Exception:
+        log.exception("Could not save the block for %s", ip)
+        return False
+    return until is not None and until > now
