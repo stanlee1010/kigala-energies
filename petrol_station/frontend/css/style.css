@@ -146,6 +146,10 @@ body::before {
   font-size: .85rem;
 }
 .sidebar__user strong { color: #fff; display: block; }
+.sidebar__actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .35rem; }
+.sidebar .sidebar__download { background: var(--brand); color: #fff; border-color: transparent; white-space: nowrap; }
+.sidebar .sidebar__download:hover { filter: brightness(1.1); }
+.login-download { margin-top: .75rem; }
 
 .main { margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column; }
 

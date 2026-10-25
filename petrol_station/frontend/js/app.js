@@ -594,7 +594,7 @@
         </ul>
         <div class="sidebar__user"><strong>${App.esc(App.user.full_name)}</strong>
           ${App.esc(App.user.username)} · ${App.label(App.user.role)}
-          <div><button class="btn btn--sm btn--ghost" id="logout-btn">Log out</button></div>
+          <div class="sidebar__actions"><button class="btn btn--sm btn--ghost" id="logout-btn">Log out</button></div>
         </div>
       </aside>`), main);
     shell.insertBefore(App.h('<div class="backdrop"></div>'), main);
@@ -656,7 +656,44 @@
   // days; an app added to the home screen keeps it. Staff are invited once (dismiss = 14 days).
   let installPrompt = null;
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; showInstallTip(); });
+  window.addEventListener("appinstalled", () => App.$$("[data-download-app]").forEach((b) => b.remove()));
   const installed = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+  /** Saved copies of the pages (open fast, work offline); also what lets the browser install the app. */
+  App.registerServiceWorker = () => {
+    if ("serviceWorker" in navigator && window.isSecureContext && !App.demo) {
+      navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline copy not available:", e));
+    }
+  };
+
+  /** A "Download app" button: the browser's install box, or the steps where there is none (iPhone). */
+  App.downloadButton = function (cls = "btn btn--sm") {
+    if (installed() || App.demo) return null;
+    const btn = App.h(`<button type="button" class="${cls}" data-download-app title="Put the station app on this phone's home screen">⬇ Download app</button>`);
+    btn.addEventListener("click", async () => {
+      if (installPrompt) {
+        installPrompt.prompt();
+        const choice = await installPrompt.userChoice.catch(() => null);
+        installPrompt = null;
+        if (choice && choice.outcome === "accepted") App.$$("[data-download-app]").forEach((b) => b.remove());
+        return;
+      }
+      const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const steps = !window.isSecureContext
+        ? `<p>The app can only be installed from the secure address. Open <strong>https://kigala-energies.vercel.app</strong> and tap <strong>Download app</strong> there.</p>`
+        : ios
+          ? `<ol><li>Tap <strong>Share</strong> <span aria-hidden="true">(the square with an arrow ⬆)</span> at the bottom of Safari.</li>
+               <li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li></ol>
+             <p class="small muted">On iPhone this only works in Safari.</p>`
+          : `<ol><li>Open the browser menu <span aria-hidden="true">(⋮ at the top right)</span>.</li>
+               <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li></ol>
+             <p class="small muted">If you do not see it, open this site in Chrome or Edge.</p>`;
+      App.modal({ title: "📲 Download the station app", body: App.h(`<div class="stack">
+        <p>The app opens straight from your home screen, opens pages faster and keeps saves made without internet safe.</p>${steps}</div>`),
+        actions: [{ label: "OK", cls: "btn--primary" }] });
+    });
+    return btn;
+  };
 
   function offerInstall() {
     if (!window.isSecureContext || installed() || App.demo) return;
@@ -836,10 +873,10 @@
     App.demo = !!s.demo;
     renderShell(title);
     if (App.demo) renderTrainingBanner();
+    const download = App.downloadButton("btn btn--sm sidebar__download");
+    if (download) App.$(".sidebar__actions").append(download);
     // Offline support: saved copies of pages/data (needs HTTPS or localhost) and the outbox.
-    if ("serviceWorker" in navigator && window.isSecureContext && !App.demo) {
-      navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline copy not available:", e));
-    }
+    App.registerServiceWorker();
     // Ask the browser not to delete this site's saved data (granted more readily to installed apps).
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persisted().then((yes) => yes || navigator.storage.persist()).catch(() => null);
