@@ -8,6 +8,7 @@ Run for production:
 """
 import logging
 import os
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -186,6 +187,27 @@ def create_app(config_class=Config):
     def health():
         db.session.execute(db.text("SELECT 1"))
         return jsonify({"status": "ok"})
+
+    if app.config.get("RUN_CHECKS_ON_REQUESTS"):
+        last_checks = {"at": None}
+
+        @app.before_request
+        def run_station_checks():
+            # Idempotent checks (upcoming shifts, periods, missing shifts, stock, refills): safe to
+            # run from several instances. A failure is logged and never breaks the person's request.
+            if not request.path.startswith("/api/") or request.path.startswith("/api/demo"):
+                return None
+            now = time.monotonic()
+            if last_checks["at"] is not None and now - last_checks["at"] < app.config["SCHEDULER_INTERVAL_SECONDS"]:
+                return None
+            last_checks["at"] = now
+            from .services.monitor import run_all_stations
+            try:
+                run_all_stations()
+            except Exception:
+                db.session.rollback()
+                app.logger.exception("Station checks failed")
+            return None
 
     register_cli(app)
 

@@ -45,6 +45,9 @@ def info():
             station, rebuilt = Station.query.first(), True
         return jsonify({"demo": True, "station": station.name if station else "Training",
                         "accounts": demo.accounts(), "rebuilt": rebuilt})
+    if current_app.config.get("VERCEL"):
+        # The training portal runs on the station computer only, never on the internet host.
+        return jsonify({"demo": False, "training_available": False})
     running = _training_running()
     host = request.host.split(":")[0]
     return jsonify({"demo": False, "training_running": running,

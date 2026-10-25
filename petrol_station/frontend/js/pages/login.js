@@ -64,7 +64,7 @@
         login({ username: b.dataset.user }, "/api/demo/login").catch(App.error);
       });
     } else {
-      showTrainingLink(info.training_url, info.training_running);
+      if (info.training_available !== false) showTrainingLink(info.training_url, info.training_running);
     }
   }).catch(() => showTrainingLink(null, false));
 

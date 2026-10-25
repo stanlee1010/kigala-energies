@@ -90,6 +90,9 @@ class Config:
 
     # Background monitor (shift generation, first-Wednesday detection, alerts).
     SCHEDULER_ENABLED = _bool("SCHEDULER_ENABLED", not VERCEL)
+    # Serverless (Vercel) has no background thread: run the same checks during normal API
+    # requests instead, at most once per SCHEDULER_INTERVAL_SECONDS per running instance.
+    RUN_CHECKS_ON_REQUESTS = _bool("RUN_CHECKS_ON_REQUESTS", VERCEL)
     SCHEDULER_INTERVAL_SECONDS = int(os.environ.get("SCHEDULER_INTERVAL_SECONDS", "300"))
 
     # Used only when the database is first created.
