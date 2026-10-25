@@ -80,7 +80,8 @@ textarea.input { min-height: 90px; resize: vertical; }
 /* Phones: tables collapse into labelled cards */
 @media (max-width: 700px) {
   .table--cards thead { display: none; }
-  .table--cards, .table--cards tbody, .table--cards tr, .table--cards td { display: block; width: 100%; }
+  .table--cards, .table--cards tbody, .table--cards tfoot, .table--cards tr, .table--cards td { display: block; width: 100%; }
+  .table--cards tfoot td:empty { display: none; }
   .table--cards tr { border-bottom: 1px solid var(--border); padding: .5rem 0; }
   .table--cards td { border: 0; padding: .3rem .8rem; display: flex; justify-content: space-between; gap: 1rem; text-align: right; }
   .table--cards td::before { content: attr(data-label); font-weight: 600; color: var(--muted); text-align: left; }

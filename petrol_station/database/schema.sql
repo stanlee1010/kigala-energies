@@ -232,6 +232,47 @@ CREATE TABLE reports (
 	FOREIGN KEY(generated_by) REFERENCES users (id)
 );
 
+CREATE TABLE salary_advances (
+	id SERIAL NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	month VARCHAR(7) NOT NULL, 
+	taken_on DATE NOT NULL, 
+	amount NUMERIC(18, 2) NOT NULL, 
+	note VARCHAR(255), 
+	recorded_by INTEGER NOT NULL, 
+	status VARCHAR(8) NOT NULL, 
+	void_reason VARCHAR(255), 
+	voided_by INTEGER, 
+	voided_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT ck_salary_advance_amount_positive CHECK (amount > 0), 
+	CONSTRAINT ck_salary_advance_status CHECK (status IN ('ACTIVE','VOID')), 
+	FOREIGN KEY(station_id) REFERENCES stations (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id), 
+	FOREIGN KEY(recorded_by) REFERENCES users (id), 
+	FOREIGN KEY(voided_by) REFERENCES users (id)
+);
+
+CREATE TABLE salary_months (
+	id SERIAL NOT NULL, 
+	station_id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	month VARCHAR(7) NOT NULL, 
+	amount NUMERIC(18, 2) NOT NULL, 
+	updated_by INTEGER NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_salary_month UNIQUE (station_id, user_id, month), 
+	CONSTRAINT ck_salary_amount_not_negative CHECK (amount >= 0), 
+	FOREIGN KEY(station_id) REFERENCES stations (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id), 
+	FOREIGN KEY(updated_by) REFERENCES users (id)
+);
+
 CREATE TABLE shifts (
 	id SERIAL NOT NULL, 
 	station_id INTEGER NOT NULL, 

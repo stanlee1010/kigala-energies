@@ -102,10 +102,10 @@ def create_app(config_class=Config):
 
     from .auth.routes import bp as auth_bp
     from .routes import (alerts, capital, dashboard, demo, director, expenses, fuel, pumps, refills, reports, roster,
-                         shifts, tanks, users)
+                         salaries, shifts, tanks, users)
     app.register_blueprint(auth_bp)
-    for module in (users, pumps, tanks, fuel, capital, shifts, roster, refills, expenses, alerts, dashboard, reports,
-                   director, demo):
+    for module in (users, pumps, tanks, fuel, capital, shifts, roster, refills, expenses, salaries, alerts, dashboard,
+                   reports, director, demo):
         app.register_blueprint(module.bp)
 
     STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}

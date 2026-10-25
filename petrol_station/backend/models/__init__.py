@@ -7,6 +7,7 @@ from .refill import (ADJUSTMENT_TYPES, STAFF_EDITABLE_REFILL_STATUSES, STOCK_REF
                      FuelRefill, RefillConfirmation, StockAdjustment)
 from .shift import (DEFAULT_SHIFT_DEFINITIONS, FuelStock, PumpReading, Shift, ShiftCash, ShiftDefinition,
                     ShiftDeposit, ShiftStaff, ShiftStaffPump, WeeklyShiftChoice)
+from .salary import SALARY_ADVANCE_STATUSES, SalaryAdvance, SalaryMonth
 from .security import IpBlock, ProcessedRequest, RateCounter
 from .station import ROLES, Station, SystemSetting, User, UserStation
 
@@ -15,6 +16,6 @@ __all__ = [
     "DEFAULT_SHIFT_DEFINITIONS", "STAFF_EDITABLE_REFILL_STATUSES", "STOCK_REFILL_STATUSES",
     "Alert", "Attachment", "AuditLog", "Expense", "ExpenseCategory", "FuelPrice", "FuelRefill",
     "FuelStock", "FuelType", "IpBlock", "ProcessedRequest", "Pump", "RateCounter", "PumpReading", "RefillConfirmation", "Report",
-    "ReportingPeriod", "Shift", "ShiftCash", "ShiftDefinition", "ShiftDeposit", "ShiftStaff", "ShiftStaffPump", "Station",
+    "ReportingPeriod", "SALARY_ADVANCE_STATUSES", "SalaryAdvance", "SalaryMonth", "Shift", "ShiftCash", "ShiftDefinition", "ShiftDeposit", "ShiftStaff", "ShiftStaffPump", "Station",
     "StockAdjustment", "StockThreshold", "Supplier", "SystemSetting", "Tank", "User", "UserStation", "WeeklyShiftChoice", "utcnow",
 ]

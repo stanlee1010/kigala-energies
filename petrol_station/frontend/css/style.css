@@ -390,3 +390,7 @@ body:has(#offline-bar) { padding-bottom: 6rem; }   /* the bar must never cover t
 }
 .pump-choice input { width: 1.2rem; height: 1.2rem; }
 .pump-choice.is-taken { opacity: .55; cursor: not-allowed; }
+
+/* Salaries: the salary is typed straight into the table. */
+.salary-input { max-width: 170px; margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--brand); text-decoration: underline; cursor: pointer; font: inherit; }

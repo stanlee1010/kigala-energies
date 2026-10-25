@@ -511,7 +511,7 @@
       const val = c.render ? c.render(row) : App.esc(row[c.key] ?? "—");
       return `<td class="${c.cls || ""}" data-label="${App.esc(c.label)}">${val}</td>`;
     }).join("")}</tr>`).join("");
-    const foot = footer ? `<tfoot><tr>${footer.map((f) => `<td class="${f.cls || ""}">${f.html ?? ""}</td>`).join("")}</tr></tfoot>` : "";
+    const foot = footer ? `<tfoot><tr>${footer.map((f) => `<td class="${f.cls || ""}"${f.label ? ` data-label="${App.esc(f.label)}"` : ""}>${f.html ?? ""}</td>`).join("")}</tr></tfoot>` : "";
     return `<div class="table-wrap"><table class="table ${cards ? "table--cards" : ""}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
   };
 
@@ -542,6 +542,7 @@
       ["/manager/stock.html", "🛢️", "Tanks & Stock"],
       ["/manager/refills.html", "🚚", "Refills"],
       ["/manager/expenses.html", "🧾", "Expenses"],
+      ["/manager/salaries.html", "💵", "Salaries"],
       ["/manager/reports.html", "📑", "Reports"],
       ["/manager/audit.html", "🔍", "Audit Log"],
       ["/manager/settings.html", "⚙️", "Settings"],
@@ -556,6 +557,7 @@
       ["/staff/refill.html", "🚚", "Fuel Refill"],
       ["/staff/records.html?tab=expenses", "💸", "Expenses"],
       ["/staff/records.html", "🧾", "My Records"],
+      ["/staff/salary.html", "💵", "My Salary"],
     ],
   };
 
