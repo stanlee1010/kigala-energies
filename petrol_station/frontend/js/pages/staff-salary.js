@@ -9,8 +9,7 @@ App.run(async () => {
     .format(new Date(`${m}-01T00:00:00Z`));
 
   page.innerHTML = `
-    <div class="page-head"><div><h1>My salary</h1><p>Set by the manager. Money you take is deducted from that month's salary; if you take more than the
-        salary, the rest is deducted from next month's salary.</p></div>
+    <div class="page-head"><div><h1>My salary</h1></div>
       <div class="field"><label for="month">Month</label><input class="input" type="month" id="month" value="${month}" max="${month}"></div></div>
     <div id="summary"></div>
     <div class="card"><div class="card__head"><h2>Money taken</h2></div><div id="list"></div></div>`;

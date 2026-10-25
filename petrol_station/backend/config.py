@@ -50,6 +50,13 @@ class Config:
     # Training portal reads (never writes) the real station's set-up — shifts, pumps, tanks, prices —
     # so practice matches the real station.
     REAL_DATABASE_URL = os.environ.get("REAL_DATABASE_URL", "")
+    # Online training portal (a separate Vercel project with its own practice database):
+    # it fetches the real station's set-up from REAL_SETUP_URL (the real site's /api/demo/setup),
+    # proving itself with TRAINING_SYNC_TOKEN, set to the same secret on both projects.
+    REAL_SETUP_URL = os.environ.get("REAL_SETUP_URL", "")
+    TRAINING_SYNC_TOKEN = os.environ.get("TRAINING_SYNC_TOKEN", "")
+    # Real site: where the login page's "Training portal" button goes when it runs online.
+    TRAINING_URL = os.environ.get("TRAINING_URL", "")
 
     # Secrets come only from the environment / .env (never from the code or git).
     # In production a missing SECRET_KEY stops the app (see create_app) instead of silently

@@ -14,7 +14,8 @@ from backend.reports.exporters import safe_text, to_excel
 from .conftest import browser_client, login
 
 PUBLIC_API = {("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("GET", "/api/demo/info"),
-              ("POST", "/api/demo/reset"), ("POST", "/api/demo/login")}   # demo ones: 403 off the training portal
+              ("POST", "/api/demo/reset"), ("POST", "/api/demo/login"),   # demo ones: 403 off the training portal
+              ("GET", "/api/demo/setup")}   # needs the shared training token instead (404 without it)
 
 
 def _url(rule):

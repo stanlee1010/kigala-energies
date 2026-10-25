@@ -390,6 +390,9 @@ def upload():
     if kind is None or kind != ALLOWED_EXTENSIONS[ext]:
         raise ApiError("That file is not a real PDF or photo. Please choose the receipt photo or PDF again.")
     stored = f"{uuid.uuid4().hex}{ext}"          # random name: never the uploader's file name
+    if current_app.config["VERCEL"] and current_app.config["DEMO_MODE"]:
+        # The online training portal has no file storage: practise the expense without the photo.
+        raise ApiError("Receipt photos are not kept in the training portal. Save the expense without the photo.")
     if current_app.config["VERCEL"]:
         from vercel.blob import sync as blob
         content = file.read()

@@ -49,56 +49,81 @@ def _real_engine():
 
 
 def read_real_setup():
-    """The real station's shifts, fuels, tanks, pumps and prices, or None if unavailable."""
+    """The real station's shifts, fuels, tanks, pumps and prices, or None if unavailable.
+
+    Online, the training portal asks the real website for it (REAL_SETUP_URL, see
+    routes/demo.py::setup) and never holds the real database's password. On the station
+    computer it reads the real database directly, read-only (REAL_DATABASE_URL).
+    """
+    if current_app.config.get("REAL_SETUP_URL"):
+        return _fetch_real_setup()
     engine = _real_engine()
     if engine is None:
         return None
     try:
         with engine.connect() as c:
-            # Several locations: the training portal copies the FIRST station's set-up.
-            sid = c.execute(text("SELECT id FROM stations ORDER BY id")).scalar()
-            fuels = {r.id: {"code": r.code, "name": r.name, "color": r.color}
-                     for r in c.execute(text("SELECT id, code, name, color FROM fuel_types WHERE is_active"))}
-            try:
-                tanks = {r.id: {"fuel": fuels[r.fuel_type_id]["code"], "number": r.tank_number, "name": r.name,
-                                "capacity": float(r.capacity_litres)}
-                         for r in c.execute(text("SELECT id, fuel_type_id, tank_number, name, capacity_litres "
-                                                 "FROM tanks WHERE is_active AND station_id = :sid"), {"sid": sid}) if r.fuel_type_id in fuels}
-            except Exception:   # real station not upgraded to tanks yet: one tank per fuel
-                c.rollback()
-                tanks = {}
-            for fuel in fuels.values():
-                if not any(t["fuel"] == fuel["code"] for t in tanks.values()):
-                    tanks[f"default-{fuel['code']}"] = {"fuel": fuel["code"], "number": 1,
-                                                        "name": f"{fuel['name']} Tank 1", "capacity": 30000.0}
-            pump_sql = "SELECT fuel_type_id, pump_number, pump_name, tank_id FROM pumps WHERE is_active AND station_id = :sid"
-            try:
-                pump_rows = list(c.execute(text(pump_sql), {"sid": sid}))
-            except Exception:
-                c.rollback()
-                pump_rows = [(r[0], r[1], r[2], None) for r in c.execute(text(
-                    "SELECT fuel_type_id, pump_number, pump_name FROM pumps WHERE is_active AND station_id = :sid"), {"sid": sid})]
-            setup = {
-                "station": c.execute(text("SELECT name FROM stations WHERE id = :sid"), {"sid": sid}).scalar() or "Station",
-                "fuels": sorted(fuels.values(), key=lambda f: f["code"]),
-                "shifts": _real_shifts(c, sid),
-                "tanks": sorted(tanks.values(), key=lambda t: (t["fuel"], t["number"])),
-                "pumps": sorted(({"fuel": fuels[fid]["code"], "number": number, "name": name,
-                                  "tank": tanks[tank_id]["number"] if tank_id in tanks else 1}
-                                 for fid, number, name, tank_id in pump_rows if fid in fuels),
-                                key=lambda p: (p["fuel"], p["number"])),
-                "prices": {},
-            }
-            for r in c.execute(text("SELECT fuel_type_id, price_per_litre FROM fuel_prices WHERE station_id = :sid "
-                                    "ORDER BY created_at, id"), {"sid": sid}):
-                if r.fuel_type_id in fuels:
-                    setup["prices"][fuels[r.fuel_type_id]["code"]] = float(r.price_per_litre)
-        return setup if setup["shifts"] and setup["pumps"] else None
+            return read_setup(c)
     except Exception:
         current_app.logger.exception("Training portal: could not read the real station set-up")
         return None
     finally:
         engine.dispose()
+
+
+def _fetch_real_setup():
+    import urllib.request
+    request = urllib.request.Request(current_app.config["REAL_SETUP_URL"], headers={
+        "X-Training-Token": current_app.config["TRAINING_SYNC_TOKEN"], "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            setup = json.load(response).get("setup")
+        return setup if setup and setup.get("shifts") and setup.get("pumps") else None
+    except Exception:
+        current_app.logger.exception("Training portal: could not fetch the real station set-up")
+        return None
+
+
+def read_setup(c):
+    """The set-up of the FIRST station, read through an open database connection."""
+    # Several locations: the training portal copies the FIRST station's set-up.
+    sid = c.execute(text("SELECT id FROM stations ORDER BY id")).scalar()
+    fuels = {r.id: {"code": r.code, "name": r.name, "color": r.color}
+             for r in c.execute(text("SELECT id, code, name, color FROM fuel_types WHERE is_active"))}
+    try:
+        tanks = {r.id: {"fuel": fuels[r.fuel_type_id]["code"], "number": r.tank_number, "name": r.name,
+                        "capacity": float(r.capacity_litres)}
+                 for r in c.execute(text("SELECT id, fuel_type_id, tank_number, name, capacity_litres "
+                                         "FROM tanks WHERE is_active AND station_id = :sid"), {"sid": sid}) if r.fuel_type_id in fuels}
+    except Exception:   # real station not upgraded to tanks yet: one tank per fuel
+        c.rollback()
+        tanks = {}
+    for fuel in fuels.values():
+        if not any(t["fuel"] == fuel["code"] for t in tanks.values()):
+            tanks[f"default-{fuel['code']}"] = {"fuel": fuel["code"], "number": 1,
+                                                "name": f"{fuel['name']} Tank 1", "capacity": 30000.0}
+    pump_sql = "SELECT fuel_type_id, pump_number, pump_name, tank_id FROM pumps WHERE is_active AND station_id = :sid"
+    try:
+        pump_rows = list(c.execute(text(pump_sql), {"sid": sid}))
+    except Exception:
+        c.rollback()
+        pump_rows = [(r[0], r[1], r[2], None) for r in c.execute(text(
+            "SELECT fuel_type_id, pump_number, pump_name FROM pumps WHERE is_active AND station_id = :sid"), {"sid": sid})]
+    setup = {
+        "station": c.execute(text("SELECT name FROM stations WHERE id = :sid"), {"sid": sid}).scalar() or "Station",
+        "fuels": sorted(fuels.values(), key=lambda f: f["code"]),
+        "shifts": _real_shifts(c, sid),
+        "tanks": sorted(tanks.values(), key=lambda t: (t["fuel"], t["number"])),
+        "pumps": sorted(({"fuel": fuels[fid]["code"], "number": number, "name": name,
+                          "tank": tanks[tank_id]["number"] if tank_id in tanks else 1}
+                         for fid, number, name, tank_id in pump_rows if fid in fuels),
+                        key=lambda p: (p["fuel"], p["number"])),
+        "prices": {},
+    }
+    for r in c.execute(text("SELECT fuel_type_id, price_per_litre FROM fuel_prices WHERE station_id = :sid "
+                            "ORDER BY created_at, id"), {"sid": sid}):
+        if r.fuel_type_id in fuels:
+            setup["prices"][fuels[r.fuel_type_id]["code"]] = float(r.price_per_litre)
+    return setup if setup["shifts"] and setup["pumps"] else None
 
 
 def _real_shifts(c, sid):

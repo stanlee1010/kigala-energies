@@ -139,3 +139,74 @@ def test_training_copies_people_per_shift_and_trainees_choose_pumps(tmp_path):
         with training.app_context():
             db.session.remove()
             db.drop_all()
+
+
+class _Reply:
+    """Stands in for urlopen's reply, answered by the real site's test client."""
+    def __init__(self, response):
+        self.response = response
+
+    def read(self, *args):
+        return self.response.data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_real_site_shares_its_set_up_only_with_the_training_token(app, manager):
+    client = app.test_client()
+    assert client.get("/api/demo/setup").status_code == 404                     # no token configured: hidden
+    app.config["TRAINING_SYNC_TOKEN"] = "s3cret-token"
+    assert client.get("/api/demo/setup").status_code == 404
+    assert client.get("/api/demo/setup", headers={"X-Training-Token": "wrong"}).status_code == 404
+    r = client.get("/api/demo/setup", headers={"X-Training-Token": "s3cret-token"})
+    setup = r.json["setup"]
+    assert r.status_code == 200 and [s["code"] for s in setup["shifts"]] == ["MORNING", "NIGHT"]
+    assert len(setup["pumps"]) == 3 and "users" not in setup                      # set-up only, no people
+    assert "password" not in r.get_data(as_text=True).lower()
+
+
+def test_real_site_login_page_links_to_the_online_training_portal(app):
+    client = app.test_client()
+    app.config.update(VERCEL=True, TRAINING_URL="")
+    assert client.get("/api/demo/info").json == {"demo": False, "training_available": False}
+    app.config["TRAINING_URL"] = "https://training.example"
+    info = client.get("/api/demo/info").json
+    assert info["training_url"] == "https://training.example" and info["training_running"] is True
+
+
+def test_online_training_portal_copies_the_real_set_up_over_https(app, manager, monkeypatch):
+    app.config["TRAINING_SYNC_TOKEN"] = "s3cret-token"
+    for t in manager.get("/api/shift-types").json["shift_types"]:
+        manager.put(f"/api/shift-types/{t['id']}", json={"staff_needed": 2})
+    real = app.test_client()
+    asked = []
+
+    def fake_urlopen(request, timeout=None):
+        asked.append((request.full_url, request.headers.get("X-training-token")))
+        return _Reply(real.get("/api/demo/setup", headers={"X-Training-Token": request.headers.get("X-training-token")}))
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    class OnlineTraining(DemoTestConfig):
+        REAL_SETUP_URL = "https://real.example/api/demo/setup"
+        TRAINING_SYNC_TOKEN = "s3cret-token"
+
+    training = create_app(OnlineTraining)
+    try:
+        accounts = training.test_client().get("/api/demo/info").json["accounts"]
+        assert [a["username"] for a in accounts] == ["demo.morning", "demo.morning2", "demo.night", "demo.night2"]
+        assert asked and asked[0] == ("https://real.example/api/demo/setup", "s3cret-token")
+    finally:
+        with training.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_training_set_up_link_is_refused_on_the_training_portal(demo_app):
+    demo_app.config["TRAINING_SYNC_TOKEN"] = "s3cret-token"
+    r = demo_app.test_client().get("/api/demo/setup", headers={"X-Training-Token": "s3cret-token"})
+    assert r.status_code == 404

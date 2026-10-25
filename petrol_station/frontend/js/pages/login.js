@@ -67,17 +67,10 @@
         login({ username: b.dataset.user }, "/api/demo/login").catch(App.error);
       });
     } else {
-      showDownload();
+      App.registerServiceWorker();   // saved copies: pages open fast and the app can be installed
       if (info.training_available !== false) showTrainingLink(info.training_url, info.training_running);
     }
-  }).catch(() => { showDownload(); showTrainingLink(null, false); });
-
-  // Real portal: anyone who opens the website can put the app on their phone straight away.
-  function showDownload() {
-    App.registerServiceWorker();
-    const btn = App.downloadButton("btn btn--block login-download");
-    if (btn) form.after(btn);
-  }
+  }).catch(() => { App.registerServiceWorker(); showTrainingLink(null, false); });
 
   // Real portal: always offer the training portal under "Forgot your password?".
   function showTrainingLink(url, running) {

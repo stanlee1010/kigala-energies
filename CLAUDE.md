@@ -18,6 +18,10 @@ thresholds, expense categories and the `manager` account (must change password).
 Training portal: `serve_demo.py` (port 8001) sets `DEMO_MODE=true`, its own DB `database/training.db` and session
 cookie `training_session`. Practice data comes from `services/demo.py` (built through the real services). Anything
 that resets or simulates must check `DEMO_MODE` (see `routes/demo.py::_require_demo`) — never allow it on the real portal.
+Online, training is a separate Vercel project `kigala-energies-training` (own Neon DB, `DEMO_MODE=true`). It copies the
+real set-up from the real site's `GET /api/demo/setup` using the shared `TRAINING_SYNC_TOKEN` (never the real database
+password); the real login page's button goes to `TRAINING_URL`. Practice data is built under `bootstrap.training_lock()`.
+Deploy it from `petrol_station/` with `VERCEL_PROJECT_ID` set to that project.
 
 ## Architecture
 

@@ -300,17 +300,21 @@ def create_app(config_class=Config):
         from .services.bootstrap import bootstrap
         created = bootstrap()
         if app.config["DEMO_MODE"]:
-            from .models import Station
+            from .models import Station, User
             from .services.clock import paused_at
+            from .services.bootstrap import training_lock
             from .services.demo import needs_rebuild, reset, scramble_passwords, seed
-            if created:
-                seed()
-            else:
-                station_id = Station.query.first().id
-                if paused_at(station_id) is None or needs_rebuild(station_id):
+            # Online, several copies can start at once: they take turns, and each looks again at what
+            # the copy before it built (so the practice data is never built twice).
+            with training_lock():
+                station = Station.query.first()
+                if not User.query.filter(User.username.like("demo.%")).first():
+                    seed() if created else reset()     # new database / unfinished practice data
+                elif paused_at(station.id) is None or needs_rebuild(station.id):
                     reset()   # older practice data, or the real station's shifts/pumps/tanks changed
-                scramble_passwords()
-                db.session.commit()
+                else:
+                    scramble_passwords()
+                    db.session.commit()
             app.logger.warning("Training portal: practice data ready (trainees sign in by choosing their shift)")
         elif created:
             app.logger.warning("Created station and initial manager account '%s' - change the password at first login.",

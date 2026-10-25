@@ -5,6 +5,8 @@ pumps, tanks, shifts, low-stock levels and expense categories, the first
 manager account and the director account (both must change their password at
 first login). No sales, prices or stock are invented - those come from real entries.
 """
+from contextlib import contextmanager
+
 from flask import current_app
 
 from ..extensions import db
@@ -13,8 +15,20 @@ from ..models import FuelType, Station, User, UserStation
 DEFAULT_FUELS = (("PETROL", "Petrol", "#16a34a"), ("DIESEL", "Diesel", "#ea580c"))
 
 
-# Any fixed number: the PostgreSQL lock that makes starting copies take turns (see bootstrap).
+# Any fixed numbers: the PostgreSQL locks that make starting copies take turns (see bootstrap).
 _BOOTSTRAP_LOCK = 724_001
+_TRAINING_LOCK = 724_002
+
+
+@contextmanager
+def training_lock():
+    """Online training portal: only one copy at a time builds or resets the practice data."""
+    if db.engine.dialect.name != "postgresql":
+        yield
+        return
+    with db.engine.begin() as lock_conn:          # held until this transaction ends
+        lock_conn.exec_driver_sql(f"SELECT pg_advisory_xact_lock({_TRAINING_LOCK})")
+        yield
 
 
 def bootstrap():
