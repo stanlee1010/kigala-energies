@@ -9,10 +9,10 @@ from datetime import date, timedelta
 from flask import Blueprint, jsonify, request
 
 from ..auth import current_user, director_required
-from ..auth.routes import forget_failures
+from ..auth.routes import forget_failures, two_step_on
 from ..calculations import ZERO, D, money
 from ..extensions import db
-from ..models import Pump, Station, User, UserStation
+from ..models import Pump, Station, User, UserStation, TwoStepLogin
 from ..services import audit
 from ..services.clock import today_local
 from ..services.finance import chart_series, financial_summary
@@ -112,7 +112,8 @@ def charts():
 def _manager_dict(u, names):
     ids = [r.station_id for r in UserStation.query.filter_by(user_id=u.id)]
     data = u.to_dict()
-    data.update(station_ids=ids, stations=[names.get(i, "?") for i in ids], current_station=names.get(u.station_id))
+    data.update(station_ids=ids, stations=[names.get(i, "?") for i in ids], current_station=names.get(u.station_id),
+                two_step=two_step_on(u))
     return data
 
 
@@ -217,6 +218,21 @@ def reset_manager_password(user_id):
     audit.log(user.station_id, me.id, "DIRECTOR RESET MANAGER PASSWORD", "users", user.id)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.post("/managers/<int:user_id>/reset-two-step")
+@director_required
+def reset_manager_two_step(user_id):
+    """A manager lost the phone with the authenticator app: 2-step login is switched off for them
+    (they can turn it on again with the new phone)."""
+    me = current_user()
+    user = _manager(user_id)
+    row = db.session.get(TwoStepLogin, user.id)
+    if row is not None:
+        db.session.delete(row)
+    audit.log(user.station_id, me.id, "DIRECTOR RESET MANAGER 2-STEP LOGIN", "users", user.id)
+    db.session.commit()
+    return jsonify({"manager": _manager_dict(user, {s.id: s.name for s in Station.query})})
 
 
 # ---------------------------------------------------------------- stations

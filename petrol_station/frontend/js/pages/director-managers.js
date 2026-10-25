@@ -50,11 +50,13 @@ App.run(async () => {
         { key: "full_name", label: "Manager", render: (m) => `<strong>${App.esc(m.full_name)}</strong><div class="small muted">${App.esc(m.username)}</div>` },
         { key: "stations", label: "Stations", render: (m) => App.esc(m.stations.join(", ")) },
         { key: "phone", label: "Phone", render: (m) => App.esc(m.phone || "—") },
-        { key: "is_active", label: "Access", render: (m) => m.is_active ? App.badge("ACTIVE", "Active") : App.badge("DISABLED", "Removed") },
+        { key: "is_active", label: "Access", render: (m) => (m.is_active ? App.badge("ACTIVE", "Active") : App.badge("DISABLED", "Removed"))
+            + (m.two_step ? ' <span class="small" title="2-step login is on">🔐 2-step</span>' : "") },
         { key: "last_login_at", label: "Last login", render: (m) => App.datetime(m.last_login_at) },
         { key: "a", label: "", cls: "actions", render: (m) => `
           <button class="btn btn--sm" data-edit="${m.id}">Edit</button>
           <button class="btn btn--sm" data-reset="${m.id}">Reset password</button>
+          ${m.two_step ? `<button class="btn btn--sm" data-reset-2step="${m.id}">Reset 2-step</button>` : ""}
           ${m.is_active ? `<button class="btn btn--sm btn--danger" data-toggle="${m.id}" data-to="disable">Remove</button>`
                         : `<button class="btn btn--sm btn--ok" data-toggle="${m.id}" data-to="enable">Give access back</button>`}` },
       ],
@@ -77,6 +79,14 @@ App.run(async () => {
       },
     }] });
   });
+  App.on(page, "click", "[data-reset-2step]", (e, b) => App.run(async () => {
+    const m = managers.find((x) => String(x.id) === b.dataset.reset2step);
+    if (!(await App.ask({ title: "Reset 2-step login?", confirmLabel: "Reset 2-step", danger: true,
+      message: `Only when <strong>${App.esc(m.full_name)}</strong> lost the phone with the authenticator app: their login asks for the password only until they turn 2-step login on again.` }))) return;
+    await App.post(`/api/director/managers/${m.id}/reset-two-step`);
+    App.toast("2-step login reset.", "ok");
+    await load();
+  }));
   App.on(page, "click", "[data-toggle]", (e, b) => App.run(async () => {
     const m = managers.find((x) => String(x.id) === b.dataset.toggle);
     if (b.dataset.to === "disable") {

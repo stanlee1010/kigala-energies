@@ -322,7 +322,9 @@
     return new Promise((resolve) => {
       const body = `<p>${message}</p>${input ? `
         <div class="field"><label for="ask-input">${App.esc(input.label)}</label>
-        <textarea id="ask-input" class="input" ${input.required ? "required" : ""}>${App.esc(input.value || "")}</textarea></div>` : ""}`;
+        ${input.type === "password"
+          ? `<input id="ask-input" class="input" type="password" autocomplete="current-password" ${input.required ? "required" : ""}>`
+          : `<textarea id="ask-input" class="input" ${input.required ? "required" : ""}>${App.esc(input.value || "")}</textarea>`}</div>` : ""}`;
       let done = false;
       const m = App.modal({
         title, body,
@@ -331,7 +333,8 @@
           {
             label: confirmLabel, cls: danger ? "btn--danger" : "btn--primary",
             onClick: (close, el) => {
-              const val = input ? App.$("#ask-input", el).value.trim() : true;
+              const raw = input ? App.$("#ask-input", el).value : "";
+              const val = input ? (input.type === "password" ? raw : raw.trim()) : true;   // passwords exactly as typed
               if (input && input.required && !val) { App.toast(`${input.label} is required`, "error"); return false; }
               done = true; resolve(val);
             },

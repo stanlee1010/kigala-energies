@@ -15,7 +15,8 @@ from .conftest import browser_client, login
 
 PUBLIC_API = {("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("GET", "/api/demo/info"),
               ("POST", "/api/demo/reset"), ("POST", "/api/demo/login"),   # demo ones: 403 off the training portal
-              ("GET", "/api/demo/setup")}   # needs the shared training token instead (404 without it)
+              ("GET", "/api/demo/setup"),   # needs the shared training token instead (404 without it)
+              ("POST", "/api/auth/login/code")}   # second login step: needs the signed ticket from step one
 
 
 def _url(rule):

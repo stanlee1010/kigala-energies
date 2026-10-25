@@ -66,3 +66,18 @@ class UserSession(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False)          # UTC
     ended_at = db.Column(db.DateTime)                            # UTC; set at logout
+
+
+class TwoStepLogin(db.Model):
+    """A manager's or the director's authenticator-app key (2-step login).
+
+    enabled_at is empty while being set up (until a first correct code is typed).
+    last_step: the time step of the last code used, so no code works twice.
+    """
+
+    __tablename__ = "two_step_logins"
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    secret = db.Column(db.String(64), nullable=False)
+    enabled_at = db.Column(db.DateTime)                          # UTC
+    last_step = db.Column(db.BigInteger)

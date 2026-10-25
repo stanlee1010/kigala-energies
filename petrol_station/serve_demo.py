@@ -1,6 +1,6 @@
 """Training portal (demo) server — practice data only, separate database.
 
-    python serve_demo.py            -> http://0.0.0.0:8001
+    python serve_demo.py            -> http://127.0.0.1:8001 (this computer only)
 
 Uses database/training.db and uploads/training/, so nothing done here can
 touch the real station records served by serve.py on port 8000.
@@ -28,7 +28,7 @@ from waitress import serve  # noqa: E402
 from backend.app import create_app  # noqa: E402
 
 if __name__ == "__main__":
-    host = os.environ.get("HOST", "0.0.0.0")
+    host = os.environ.get("HOST", "127.0.0.1")   # this computer only (plain HTTP; see serve.py)
     port = int(os.environ["PORT"])
     print(f"TRAINING PORTAL (practice data only) running on http://{host}:{port}")
     serve(create_app(), host=host, port=port, threads=8)

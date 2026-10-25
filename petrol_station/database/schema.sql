@@ -22,6 +22,15 @@ CREATE TABLE ip_blocks (
 	PRIMARY KEY (ip)
 );
 
+CREATE TABLE login_failures (
+	username VARCHAR(60) NOT NULL, 
+	ip VARCHAR(64) NOT NULL, 
+	count INTEGER NOT NULL, 
+	locked_until TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (username, ip)
+);
+
 CREATE TABLE processed_requests (
 	key VARCHAR(64) NOT NULL, 
 	created_at BIGINT NOT NULL, 
@@ -330,6 +339,24 @@ CREATE TABLE system_settings (
 	CONSTRAINT uq_setting_station_key UNIQUE (station_id, key), 
 	FOREIGN KEY(station_id) REFERENCES stations (id), 
 	FOREIGN KEY(updated_by) REFERENCES users (id)
+);
+
+CREATE TABLE two_step_logins (
+	user_id INTEGER NOT NULL, 
+	secret VARCHAR(64) NOT NULL, 
+	enabled_at TIMESTAMP WITHOUT TIME ZONE, 
+	last_step BIGINT, 
+	PRIMARY KEY (user_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE user_sessions (
+	id VARCHAR(64) NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	ended_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
 CREATE TABLE user_stations (

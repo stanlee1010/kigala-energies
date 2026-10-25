@@ -164,3 +164,72 @@ def test_session_fingerprint_is_not_part_of_the_password_hash(app, manager):
     with app.app_context():
         user = User.query.filter_by(username="manager").one()
         assert user.session_stamp not in user.password_hash
+
+
+# F-07 · optional 2-step login for managers and the director ------------------------------------------
+def _code(secret, offset=0):
+    from backend.services import twostep
+    return twostep.code_at(secret, twostep.current_step() + offset)
+
+
+def _turn_on(manager, password="ChangeMe123!"):
+    assert manager.post("/api/auth/two-step/setup", json={"password": "wrong"}).status_code == 400
+    setup = manager.post("/api/auth/two-step/setup", json={"password": password}).json
+    assert setup["link"].startswith("otpauth://totp/") and setup["qr_svg"].lstrip().startswith("<?xml")
+    assert manager.post("/api/auth/two-step/confirm", json={"code": "000000" if _code(setup["secret"]) != "000000" else "111111"}).status_code == 400
+    assert manager.post("/api/auth/two-step/confirm", json={"code": _code(setup["secret"])}).json["enabled"] is True
+    return setup["secret"]
+
+
+def test_two_step_login_asks_for_the_app_code_after_the_password(app, manager):
+    secret = _turn_on(manager)
+    device = _device(app, "10.3.0.1")
+    step_one = device.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"}).json
+    assert step_one["two_step_required"] is True and "user" not in step_one
+    assert device.get("/api/auth/me").status_code == 401                      # not logged in by the password alone
+    for _ in range(2):
+        assert device.post("/api/auth/login/code", json={"ticket": step_one["ticket"], "code": "123456"}).status_code == 401
+    third = device.post("/api/auth/login/code", json={"ticket": step_one["ticket"], "code": "123456"}).json
+    assert third["retry_after"] == 30                                          # wrong codes count like wrong passwords
+    from backend.models import LoginFailure
+    with app.app_context():
+        LoginFailure.query.update({"locked_until": None})
+        db.session.commit()
+    ok = device.post("/api/auth/login/code", json={"ticket": step_one["ticket"], "code": _code(secret, 1)})
+    assert ok.status_code == 200 and ok.json["user"]["two_step"] is True
+    assert device.get("/api/auth/me").status_code == 200
+    again = _device(app, "10.3.0.2")                                           # the same code never works twice
+    ticket = again.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"}).json["ticket"]
+    assert again.post("/api/auth/login/code", json={"ticket": ticket, "code": _code(secret, 1)}).status_code == 401
+
+
+def test_two_step_ticket_cannot_be_forged_or_outlive_a_password_change(app, manager):
+    secret = _turn_on(manager)
+    device = _device(app, "10.4.0.1")
+    ticket = device.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"}).json["ticket"]
+    assert device.post("/api/auth/login/code", json={"ticket": ticket + "x", "code": _code(secret)}).status_code == 401
+    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9"})
+    r = device.post("/api/auth/login/code", json={"ticket": ticket, "code": _code(secret)})
+    assert r.status_code == 401 and "again" in r.json["error"]
+
+
+def test_staff_cannot_use_two_step_and_turning_it_off_needs_password_and_code(app, manager):
+    _new_staff(manager)
+    asha = login(app, "asha01", "Temp1234")
+    assert asha.post("/api/auth/two-step/setup", json={"password": "Temp1234"}).status_code == 403
+    secret = _turn_on(manager)
+    assert manager.post("/api/auth/two-step/off", json={"password": "ChangeMe123!", "code": "000001"}).status_code == 400
+    assert manager.post("/api/auth/two-step/off", json={"password": "wrong", "code": _code(secret, 1)}).status_code == 400
+    assert manager.post("/api/auth/two-step/off", json={"password": "ChangeMe123!", "code": _code(secret, 1)}).json["enabled"] is False
+    plain = _device(app, "10.5.0.1").post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"}).json
+    assert "user" in plain and "two_step_required" not in plain
+
+
+def test_director_resets_a_managers_two_step_after_a_lost_phone(app, manager):
+    _turn_on(manager)
+    director = login(app, "director", "Director123!")
+    mid = manager.get("/api/auth/me").json["user"]["id"]
+    listed = {m["id"]: m for m in director.get("/api/director/managers").json["managers"]}
+    assert listed[mid]["two_step"] is True
+    assert director.post(f"/api/director/managers/{mid}/reset-two-step").json["manager"]["two_step"] is False
+    assert manager.post(f"/api/director/managers/{mid}/reset-two-step").status_code == 403    # managers cannot

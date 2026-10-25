@@ -6,7 +6,8 @@ petrol/oil station — never add hotel, shop or restaurant modules.
 ## Commands (run from `petrol_station/`, interpreter `../.venv/Scripts/python.exe`)
 
 - Dev server with reload: `..\.venv\Scripts\python.exe -m backend.app` → http://127.0.0.1:5000
-- Production/LAN server: `..\.venv\Scripts\python.exe serve.py` → http://0.0.0.0:8000
+- Station server: `..\.venv\Scripts\python.exe serve.py` → http://127.0.0.1:8000 (this computer only: plain HTTP;
+  phones use the HTTPS site; `HOST=0.0.0.0` opens it to the Wi-Fi — audit F-08)
 - Tests: `..\.venv\Scripts\python.exe -m pytest -q tests -p no:cacheprovider`
 - Run background checks once: `..\.venv\Scripts\python.exe -m flask --app backend.app check`
 - Regenerate `database/schema.sql` after model changes (see how it was produced: CreateTable over `db.metadata.sorted_tables`, PostgreSQL dialect)
@@ -89,6 +90,7 @@ Deploy it from `petrol_station/` with `VERCEL_PROJECT_ID` set to that project.
 | Reports + PDF/Excel | `reports/builder.py`, `reports/exporters.py`, `routes/reports.py` |
 | Audit log | `services/audit.py`, `routes/alerts.py::audit_log` |
 | API rate limit, device blocking, wrong-password waits | `services/guard.py`, `services/ratelimit.py` (memory, or DB tables `rate_counters`/`ip_blocks` when `SHARED_RATE_LIMITS`, default on Vercel), `auth/routes.py::login` (waits per username+device in `login_failures`, also for unknown usernames; 20 in an hour locks the username everywhere) |
+| 2-step login (optional, manager/director) | `services/twostep.py` (TOTP, QR drawn by reportlab), `auth/routes.py` (`/login/code` with a signed ticket, `/two-step/*`), table `two_step_logins`, director "Reset 2-step", `flask reset-two-step <username>`, Change password page |
 | Sessions, logout, first-login password change | `auth/__init__.py` (server-side `user_sessions` ended at logout; temporary password allows only `FIRST_LOGIN_ENDPOINTS`), `common.validate_password` |
 | Security audit (25 Oct 2026) | `SECURITY-AUDIT.md`, `tests/test_audit_fixes.py`. Keep `petrol_station/public/` (only README): without it Vercel publishes the server code |
 | Offline saves (outbox) + page copies | `App.api`/`App.flushOutbox` in `app.js` (only whole-record PUTs are queued; each carries an `Idempotency-Key`, applied once via `processed_requests` in `app.py::apply_each_save_once`; refused saves kept in a "could not be sent" list; `X-Saved-At` = typed time in SERVER time (phone keeps its offset from `/api/time`), checked by `common.saved_at`; `based_on`/`was` values make the server refuse overwriting newer changes via `common.check_unchanged`), `frontend/sw.js` (page files from saved copies, refreshed when the `X-App-Version` header changes; new pages must be added to `PRECACHE`), `manifest.webmanifest` (installable; `navigator.storage.persist`) |

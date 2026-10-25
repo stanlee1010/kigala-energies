@@ -14,6 +14,7 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
+import click
 from flask import Flask, abort, jsonify, redirect, request, send_from_directory
 from flask.sessions import SecureCookieSessionInterface
 from sqlalchemy import event
@@ -332,6 +333,20 @@ def register_cli(app):
         from .services.monitor import run_all_stations
         run_all_stations()
         print("Checks completed.")
+
+    @app.cli.command("reset-two-step")
+    @click.argument("username")
+    def reset_two_step(username):
+        """Switch off 2-step login for one account (e.g. the director lost the phone with the app)."""
+        from .models import TwoStepLogin, User
+        user = User.query.filter(db.func.lower(User.username) == username.lower()).first()
+        row = db.session.get(TwoStepLogin, user.id) if user else None
+        if row is None:
+            print("That account has no 2-step login.")
+            return
+        db.session.delete(row)
+        db.session.commit()
+        print(f"2-step login switched off for {user.username}. They can turn it on again after logging in.")
 
     @app.cli.command("reset-manager-password")
     def reset_manager_password():

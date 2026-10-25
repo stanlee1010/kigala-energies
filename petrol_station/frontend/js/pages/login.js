@@ -18,7 +18,41 @@
   }
 
   async function login(credentials, url) {
-    const { user } = await App.api("POST", url || "/api/auth/login", credentials, { allow401: true });
+    const res = await App.api("POST", url || "/api/auth/login", credentials, { allow401: true });
+    if (res.two_step_required) { askForCode(res.ticket); return; }
+    finish(res.user);
+  }
+
+  // 2-step login (managers/director who turned it on): the 6-digit code from the authenticator app.
+  function askForCode(ticket) {
+    form.classList.add("hidden");
+    const step = App.h(`<form id="code-form" class="stack" novalidate>
+      <div class="field"><label for="code">6-digit code from your authenticator app</label>
+        <input class="input input--big" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+          pattern="[0-9 ]*" maxlength="7" required></div>
+      <button class="btn btn--primary btn--lg btn--block" type="submit">Continue</button>
+      <button class="btn btn--ghost btn--block" type="button" data-back>Back</button></form>`);
+    form.after(step);
+    const codeBtn = App.$("button[type=submit]", step);
+    App.$("#code", step).focus();
+    App.$("[data-back]", step).addEventListener("click", () => { step.remove(); form.classList.remove("hidden"); });
+    step.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (codeBtn.disabled) return;
+      codeBtn.disabled = true;
+      try {
+        const res = await App.api("POST", "/api/auth/login/code", { ticket, code: App.$("#code", step).value }, { allow401: true });
+        finish(res.user);
+      } catch (err) {
+        App.error(err);
+        App.$("#code", step).value = "";
+        if (err.status === 401 && /again/.test(err.message)) { step.remove(); form.classList.remove("hidden"); return; }
+      }
+      codeBtn.disabled = false;
+    });
+  }
+
+  function finish(user) {
     // Saved copies of pages' data belong to whoever used this device before: forget them.
     if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage("clear-data");
     if (user.must_change_password) location.href = "/change-password.html";
