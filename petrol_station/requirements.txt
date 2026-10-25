@@ -4,7 +4,7 @@ SQLAlchemy==2.1.1
 python-dotenv==1.2.3
 tzdata==2026.4
 openpyxl==3.1.5
-reportlab==5.0.1
+reportlab==5.1.0
 pillow>=13.0.0   # installed by reportlab; older versions have known flaws (security audit F-11)
 waitress==3.0.2
 gunicorn==26.2.0; platform_system != "Windows"
