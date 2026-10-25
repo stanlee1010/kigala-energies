@@ -34,10 +34,27 @@ def _training_running():
         return False
 
 
+def _once_ready(read):
+    """Read practice data; if another copy is rebuilding it right now (empty, or tables being
+    re-created), wait for that rebuild to finish and read again."""
+    try:
+        result = read()
+    except Exception:
+        db.session.rollback()
+        result = None
+    if result:
+        return result
+    from ..services.bootstrap import training_lock
+    with training_lock():          # free again once the rebuild is done
+        pass
+    db.session.rollback()          # look at the finished data, not the old snapshot
+    return read()
+
+
 @bp.get("/info")
 def info():
     if current_app.config.get("DEMO_MODE"):
-        station = Station.query.first()
+        station = _once_ready(lambda: Station.query.first())
         rebuilt = False
         # The login page is where a training session starts: if the manager changed the real
         # shifts, pumps or tanks since the practice data was built, rebuild it to match.
@@ -47,9 +64,10 @@ def info():
                 if demo.needs_rebuild(Station.query.first().id):   # not already done by another copy
                     demo.reset()
                     rebuilt = True
-            station = Station.query.first()
+        accounts = _once_ready(demo.accounts) or []
+        station = Station.query.first()
         return jsonify({"demo": True, "station": station.name if station else "Training",
-                        "accounts": demo.accounts(), "rebuilt": rebuilt})
+                        "accounts": accounts, "rebuilt": rebuilt})
     if current_app.config.get("TRAINING_URL"):
         # The training portal runs online as its own site (own practice database).
         return jsonify({"demo": False, "training_running": True, "training_url": current_app.config["TRAINING_URL"]})
@@ -74,7 +92,8 @@ def login():
                          current_app.config["LOGIN_RATE_WINDOW_SECONDS"])
     if wait:
         raise ApiError(f"Too many login attempts from this device. Try again in {max(1, wait // 60)} minute(s).", 429)
-    user = demo.practice_account(require_text(body(), "username", max_len=60).lower())
+    username = require_text(body(), "username", max_len=60).lower()
+    user = _once_ready(lambda: demo.practice_account(username))
     if user is None:
         raise ApiError("Choose one of the practice shifts shown on the page", 404)
     from ..auth.routes import user_payload

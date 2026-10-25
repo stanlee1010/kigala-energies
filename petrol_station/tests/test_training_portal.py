@@ -210,3 +210,27 @@ def test_training_set_up_link_is_refused_on_the_training_portal(demo_app):
     demo_app.config["TRAINING_SYNC_TOKEN"] = "s3cret-token"
     r = demo_app.test_client().get("/api/demo/setup", headers={"X-Training-Token": "s3cret-token"})
     assert r.status_code == 404
+
+
+def test_practice_list_and_sign_in_wait_for_a_rebuild_in_progress(demo_app, monkeypatch):
+    """Another copy is rebuilding: the first read finds nothing (or half-made tables) - wait, read again."""
+    from backend.services import demo as demo_service
+    real_accounts, real_account = demo_service.accounts, demo_service.practice_account
+    calls = {"list": 0, "one": 0}
+
+    def accounts_mid_rebuild():
+        calls["list"] += 1
+        return [] if calls["list"] == 1 else real_accounts()
+
+    def account_mid_rebuild(username):
+        calls["one"] += 1
+        if calls["one"] == 1:
+            raise RuntimeError('relation "users" does not exist')   # tables being re-created
+        return real_account(username)
+
+    monkeypatch.setattr(demo_service, "accounts", accounts_mid_rebuild)
+    monkeypatch.setattr(demo_service, "practice_account", account_mid_rebuild)
+    info = demo_app.test_client().get("/api/demo/info").json
+    assert [a["username"] for a in info["accounts"]] == ["demo.morning", "demo.night"] and calls["list"] == 2
+    r = browser_client(demo_app).post("/api/demo/login", json={"username": "demo.morning"})
+    assert r.status_code == 200 and calls["one"] == 2

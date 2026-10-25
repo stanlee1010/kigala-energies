@@ -49,7 +49,15 @@
   });
 
   // Training portal: show the practice accounts. Real portal: link to training if it is running.
-  App.api("GET", "/api/demo/info", undefined, { allow401: true }).then((info) => {
+  App.api("GET", "/api/demo/info", undefined, { allow401: true }).then(function show(info) {
+    if (info.demo && !info.accounts.length) {
+      // Practice data is being prepared (e.g. the real station's shifts just changed): try again shortly.
+      document.body.classList.add("is-training");
+      form.classList.add("hidden");
+      App.$("#login-hint").textContent = "Preparing practice data… this page will be ready in a moment.";
+      setTimeout(() => App.api("GET", "/api/demo/info", undefined, { allow401: true }).then(show).catch(() => null), 5000);
+      return;
+    }
     if (info.demo) {
       document.body.classList.add("is-training");
       App.$("#station-name").textContent = "🎓 Training portal";
