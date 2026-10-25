@@ -187,6 +187,10 @@ def create_app(config_class=Config):
             # Pages, scripts and styles: always check for a newer version (cheap 304 if unchanged),
             # so every phone gets updates immediately instead of an old cached copy.
             response.headers["Cache-Control"] = "no-cache"
+            # Chrome/Edge: build the page behind a link the moment it is touched or hovered, so it
+            # opens at once when tapped (rules in frontend/speculation-rules.json).
+            if response.mimetype == "text/html":
+                response.headers["Speculation-Rules"] = '"/speculation-rules.json"'
             # Vercel: keep the files in the nearby CDN so pages open fast (each deploy starts a fresh
             # cache, so updates still show at once). Never for anything tied to a login.
             if (app.config.get("VERCEL") and response.status_code == 200 and "Set-Cookie" not in response.headers
@@ -210,7 +214,8 @@ def create_app(config_class=Config):
         key = (path, stat.st_mtime, stat.st_size)
         if etags.get(path, (None,))[0] != key:
             etags[path] = (key, hashlib.sha256(target.read_bytes()).hexdigest()[:20])
-        return send_from_directory(frontend_dir, path, etag=etags[path][1])
+        mimetype = "application/speculationrules+json" if path == "speculation-rules.json" else None
+        return send_from_directory(frontend_dir, path, etag=etags[path][1], mimetype=mimetype)
 
     @app.get("/")
     def index():

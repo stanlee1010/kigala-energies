@@ -1,6 +1,7 @@
 (function () {
   "use strict";
   const form = App.$("#login-form");
+  App.forgetBoot();   // whoever logs in next on this tab starts fresh
 
   // Already logged in? Go straight to the right dashboard.
   App.api("GET", "/api/auth/me", undefined, { allow401: true })

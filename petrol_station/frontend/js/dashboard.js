@@ -218,7 +218,6 @@ App.run(async () => {
     App.refreshAlertCount();
   }
 
-  await load();
-  await loadCharts("daily");
+  await Promise.all([load(), loadCharts("daily")]);
   setInterval(() => App.run(load), 60 * 1000); // live refresh every minute
 });

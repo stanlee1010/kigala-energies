@@ -121,7 +121,6 @@ App.run(async () => {
     App.run(loadCharts);
   });
 
-  await loadOverview();
-  await loadCharts();
+  await Promise.all([loadOverview(), loadCharts()]);
   setInterval(() => App.run(loadOverview), 60 * 1000);
 });

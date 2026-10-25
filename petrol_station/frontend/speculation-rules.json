@@ -1,0 +1,13 @@
+{
+  "prerender": [{
+    "where": {"and": [
+      {"href_matches": "/*"},
+      {"not": {"href_matches": "/api/*"}},
+      {"not": {"href_matches": "/uploads/*"}},
+      {"not": {"href_matches": "/login.html"}},
+      {"not": {"href_matches": "/change-password.html"}},
+      {"not": {"selector_matches": "[target=_blank], [download]"}}
+    ]},
+    "eagerness": "moderate"
+  }]
+}

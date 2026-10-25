@@ -4,7 +4,7 @@ App.run(async () => {
   const page = App.$("#page");
   const params = new URLSearchParams(location.search);
   let categories = [], rows = [];
-  ({ categories } = await App.get("/api/expense-categories"));
+  const categoriesReady = App.get("/api/expense-categories");   // fills the "Category" filter (starts on All)
 
   page.innerHTML = `
     <div class="page-head"><div><h1>Expenses</h1><p>Operating expenses reduce net profit. Only approved expenses are counted.</p></div>
@@ -12,7 +12,7 @@ App.run(async () => {
     <div class="card">
       <form id="filters" class="filters">
         <div class="field"><label>Status</label><select class="input" name="status">${App.options(["", "PENDING", "APPROVED", "REJECTED", "CANCELLED", "VOID"].map((s) => ({ v: s, l: s ? App.label(s) : "All" })), "v", "l", params.get("status") || "")}</select></div>
-        <div class="field"><label>Category</label><select class="input" name="category_id">${App.options(categories, "id", "name", "", "All")}</select></div>
+        <div class="field"><label>Category</label><select class="input" name="category_id">${App.options([], "id", "name", "", "All")}</select></div>
         <div class="field"><label>From</label><input class="input" type="date" name="start"></div>
         <div class="field"><label>To</label><input class="input" type="date" name="end"></div>
         <button class="btn" type="submit">Show</button>
@@ -81,5 +81,8 @@ App.run(async () => {
     load();
   }));
 
-  await load();
+  await Promise.all([load(), categoriesReady.then((r) => {
+    categories = r.categories;
+    App.$('#filters [name="category_id"]').innerHTML = App.options(categories, "id", "name", "", "All");
+  })]);
 });

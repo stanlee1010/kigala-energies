@@ -19,7 +19,9 @@ App.run(async () => {
     </div>`;
 
   let rows = [], fuels = [];
-  ({ fuel_types: fuels } = await App.get("/api/fuel-types"));
+  // Only used when correcting a refill: loaded alongside the page instead of before it.
+  const fuelsReady = App.get("/api/fuel-types").then((r) => { fuels = r.fuel_types; });
+  fuelsReady.catch(() => null);
 
   async function load() {
     ({ refills: rows } = await App.get("/api/refills" + App.qs(App.formData(App.$("#filters")))));
@@ -82,12 +84,13 @@ App.run(async () => {
         if (!reason) return false;
         await App.post(`/api/refills/${r.id}/flag`, { reason }); App.toast("Refill flagged.", "ok"); load();
       } });
-      actions.push({ label: "Correct", cls: "btn--warn", onClick: () => { correct(r); } });
+      actions.push({ label: "Correct", cls: "btn--warn", onClick: () => { App.run(() => correct(r)); } });
     }
     App.modal({ title: `Refill #${r.id}`, body, wide: true, actions });
   }
 
-  function correct(r) {
+  async function correct(r) {
+    await fuelsReady;
     const form = App.h(`<form novalidate><div class="form-grid">
       <div class="field"><label>Fuel</label><select class="input" name="fuel_type_id">${App.options(fuels, "id", "name", r.fuel_type_id)}</select></div>
       <div class="field"><label>Quantity (L)</label><input class="input" type="number" min="0" step="0.001" name="quantity_litres" value="${r.quantity_litres}" data-positive required></div>

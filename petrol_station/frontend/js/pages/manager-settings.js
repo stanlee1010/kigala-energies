@@ -43,6 +43,7 @@ App.run(async () => {
         const s = {};
         App.$$("[data-s]", form).forEach((el) => { s[el.dataset.s] = el.value.trim(); });
         await App.put("/api/settings", { name: d.name, address: d.address, phone: d.phone, settings: s });
+        App.forgetBoot();
         App.toast("Settings saved.", "ok");
         setTimeout(() => location.reload(), 600);
       });

@@ -33,8 +33,11 @@ App.run(async () => {
       <div id="list"></div>
     </div>`;
 
+  // Only needed when a shift is opened: loaded alongside the page instead of before it.
   let staff = [], pumps = [];
-  [{ users: staff }, { pumps }] = await Promise.all([App.get("/api/users"), App.get("/api/pumps")]);
+  const lists = Promise.all([App.get("/api/users"), App.get("/api/pumps")])
+    .then(([u, p]) => { staff = u.users; pumps = p.pumps; });
+  lists.catch(() => null);   // a failure shows when a shift is opened
 
   /* ------------------------------------------------ shift pattern (types) */
 
@@ -224,6 +227,7 @@ App.run(async () => {
   /* ------------------------------------------------------------- detail */
 
   async function openShift(id) {
+    await lists;
     const { shift: s } = await App.get(`/api/shifts/${id}`);
     const locked = s.status === "CLOSED";
     const activeStaff = staff.filter((u) => u.is_active && u.role === "STAFF");

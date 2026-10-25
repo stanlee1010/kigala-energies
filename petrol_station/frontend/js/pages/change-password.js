@@ -9,6 +9,7 @@ App.run(async () => {
     const data = App.formData(form);
     try {
       await App.post("/api/auth/change-password", { current_password: data.current_password, new_password: data.new_password });
+      App.forgetBoot();
       App.toast("Password changed.", "ok");
       setTimeout(() => { location.href = App.home(user); }, 700);
     } catch (err) { App.error(err); }

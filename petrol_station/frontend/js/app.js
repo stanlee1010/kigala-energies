@@ -72,6 +72,7 @@
     let payload = null;
     try { payload = await res.json(); } catch (e) { /* non-JSON */ }
     if (res.status === 401 && !opts.allow401) {
+      App.forgetBoot();
       location.href = "/login.html?next=" + encodeURIComponent(location.pathname + location.search);
       throw new Error("Please log in");
     }
@@ -611,6 +612,7 @@
     const pick = App.$("#station-switch");
     if (pick) pick.addEventListener("change", () => App.run(async () => {
       await App.post("/api/auth/station", { station_id: Number(pick.value) });
+      App.forgetBoot();
       location.reload();   // everything on the page now belongs to the chosen station
     }));
 
@@ -621,6 +623,7 @@
       if (waiting && !(await App.ask({ title: "Changes not sent yet", confirmLabel: "Log out anyway", danger: true,
         message: `${waiting} change(s) saved without internet are still on this device. They will be sent the next time you log in here. Log out anyway?` }))) return;
       await App.post("/api/auth/logout").catch(() => null);
+      App.forgetBoot();
       if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage("clear-data");
       location.href = "/login.html";
     }));
@@ -643,6 +646,7 @@
       if (!(await App.ask({ title: "Reset training data?", confirmLabel: "Reset",
         message: "All practice changes are wiped and fresh practice data is created. Everyone on the training portal will need to log in again." }))) return;
       await App.post("/api/demo/reset");
+      App.forgetBoot();
       location.href = "/login.html";
     }));
   }
@@ -706,7 +710,7 @@
       const t = await App.get("/api/time");
       clockOffset = Date.parse(t.now + "Z") - Date.now();
       if (t.utc) utcOffset = Date.parse(t.utc + "Z") - Date.now();
-      try { localStorage.setItem("kigala.clock", JSON.stringify({ station: clockOffset, utc: utcOffset })); } catch (e) { /* ignore */ }
+      try { localStorage.setItem("kigala.clock", JSON.stringify({ station: clockOffset, utc: utcOffset, at: Date.now(), shift: t.current_shift })); } catch (e) { /* ignore */ }
       pausedAt = t.paused ? Date.parse(t.now + "Z") : null;
       App.currentShiftLabel = t.current_shift;
       const el = App.$("#clock-date");
@@ -799,10 +803,24 @@
    * role: "MANAGER" | "STAFF" | null (any logged-in user)
    */
   App.init = async function ({ role = null, title = "" } = {}) {
+    // Opening another page in the same tab: draw it at once with what the last page learned, and check
+    // with the server in the background (reload if anything that matters changed, e.g. role or station).
+    // Checked at most once a minute: the server checks every request anyway.
+    const known = readBoot();
     // Asked together (each trip to the server takes time); settings are only used once logged in.
-    const settings = App.get("/api/settings");
-    settings.catch(() => null);
-    const me = await App.get("/api/auth/me");
+    const ask = () => Promise.all([App.get("/api/auth/me"), App.get("/api/settings")]);
+    let me, s;
+    if (known) {
+      ({ me, s } = known);
+      if (!(Date.now() - known.at < 60000)) ask().then(([m, st]) => {
+        saveBoot(m, st);
+        if (bootKey(m, st) !== bootKey(me, s)) location.reload();
+      }).catch(() => null);
+    } else {
+      const fresh = ask();
+      [me, s] = await fresh;
+      saveBoot(me, s);
+    }
     App.user = me.user;
     const onPasswordPage = location.pathname.endsWith("/change-password.html");
     if (App.user.must_change_password && !onPasswordPage) {
@@ -813,7 +831,6 @@
       location.href = App.home(App.user);
       return new Promise(() => {});
     }
-    const s = await settings;
     App.station = s.station;
     App.settings = s.settings;
     App.demo = !!s.demo;
@@ -827,21 +844,50 @@
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persisted().then((yes) => yes || navigator.storage.persist()).catch(() => null);
     }
-    if (App.user.role === "STAFF") offerInstall();
-    renderOfflineBar();
-    App.flushOutbox();
-    setInterval(() => { if (readBox().length) App.flushOutbox(); }, 30000);
-    // A known clock offset is good enough to show the page now; it is corrected in the background.
-    if (savedClock.station !== undefined && !App.demo) syncClock().then(tick); else await syncClock();   // training: paused clock
+    // A known clock offset is good enough to show the page now; it is re-measured every 5 minutes.
+    // Training: the clock is paused, so it is always asked for.
+    const clockAge = Date.now() - (savedClock.at || 0);
+    if (App.demo || savedClock.station === undefined) await syncClock();
+    else if (!(clockAge >= 0 && clockAge < 5 * 60 * 1000)) syncClock().then(tick);
+    else if (savedClock.shift) {
+      App.currentShiftLabel = savedClock.shift;
+      const el = App.$("#clock-date");
+      if (el) el.dataset.shift = savedClock.shift;
+    }
     tick();
     setInterval(tick, 1000);
     setInterval(syncClock, 5 * 60 * 1000);
-    if (App.user.role === "MANAGER") {
-      App.refreshAlertCount();
-      if (!onPasswordPage) managerPrompts();
-    }
+    // A page the browser built ahead of time (see speculation-rules.json) loads its data now, but sends
+    // offline saves and shows prompts only once it is actually opened.
+    const whenOpened = () => {
+      if (App.user.role === "STAFF") offerInstall();
+      renderOfflineBar();
+      App.flushOutbox();
+      setInterval(() => { if (readBox().length) App.flushOutbox(); }, 30000);
+      if (App.user.role === "MANAGER") {
+        App.refreshAlertCount();
+        if (!onPasswordPage) managerPrompts();
+      }
+    };
+    if (document.prerendering) document.addEventListener("prerenderingchange", whenOpened, { once: true });
+    else whenOpened();
     return App.user;
   };
+
+  /* Who is logged in and the station settings, kept for this browser tab only (sessionStorage). */
+  const BOOT = "kigala.boot";
+  function readBoot() {
+    try { const v = JSON.parse(sessionStorage.getItem(BOOT) || "null"); return v && v.me && v.s ? v : null; } catch (e) { return null; }
+  }
+  function saveBoot(me, s) {
+    try { sessionStorage.setItem(BOOT, JSON.stringify({ me, s, at: Date.now() })); } catch (e) { /* ignore */ }
+  }
+  /** Forget it when the person or station changes (log in, log out, switch station). */
+  App.forgetBoot = () => { try { sessionStorage.removeItem(BOOT); } catch (e) { /* ignore */ } };
+  // Only what the page is drawn from (not times like "last login", which change on their own).
+  const bootKey = (me, s) => JSON.stringify([
+    ["id", "role", "full_name", "username", "station_id", "must_change_password", "is_active", "stations"].map((k) => me.user[k]),
+    s.station && [s.station.id, s.station.name], s.settings, !!s.demo]);
 
   /** Wrap async page code so failures are shown instead of silently breaking. */
   App.run = (fn) => fn().catch((err) => {

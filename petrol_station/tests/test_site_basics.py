@@ -77,3 +77,14 @@ def test_vercel_keeps_page_files_in_its_cdn_but_never_api_replies(app, manager):
     assert "Vercel-CDN-Cache-Control" not in client.get("/no-such-page.html").headers   # 404s are not kept
     api = manager.get("/api/auth/me")
     assert api.headers["Cache-Control"] == "no-store" and "Vercel-CDN-Cache-Control" not in api.headers
+
+
+def test_pages_ask_the_browser_to_build_the_next_page_early(app):
+    client = app.test_client()
+    page = client.get("/staff/index.html")
+    assert page.headers["Speculation-Rules"] == '"/speculation-rules.json"'
+    assert "Speculation-Rules" not in client.get("/js/app.js").headers          # pages only
+    rules = client.get("/speculation-rules.json")
+    assert rules.status_code == 200 and rules.mimetype == "application/speculationrules+json"
+    excluded = str(rules.json)
+    assert all(x in excluded for x in ("/api/*", "/login.html", "/change-password.html"))
