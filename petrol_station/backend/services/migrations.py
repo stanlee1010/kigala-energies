@@ -186,7 +186,19 @@ def upgrade_004_directors_and_locations():
     db.session.commit()
 
 
+def upgrade_005_staff_per_shift():
+    """How many people work each shift type at the same time (each on their own pumps)."""
+    if "staff_needed" in _columns(inspect(db.engine), "shift_definitions"):
+        return
+    _backup_sqlite()
+    with db.engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE shift_definitions ADD COLUMN staff_needed INTEGER NOT NULL DEFAULT 1")
+    log.warning("Database upgraded: people per shift")
+
+
 def run_all():
+    # New columns on shift_definitions first: the other upgrades read shift types through the model.
+    upgrade_005_staff_per_shift()
     upgrade_002_shift_definitions()
     upgrade_003_tanks()
     upgrade_004_directors_and_locations()

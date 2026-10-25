@@ -26,13 +26,13 @@ App.run(async () => {
 
   // Expenses: the "Matumizi" sheet only — own words + amount per line, ➕ / −, total, edited in place.
   async function loadExpenses() {
-    const [{ expenses, shift }, { categories }] = await Promise.all([
+    const [{ expenses, shift, shift_id: shiftId, day }, { categories }] = await Promise.all([
       App.get("/api/staff/expenses"), App.get("/api/expense-categories")]);
     App.expenseSheet(App.$("#tab-expenses"), {
       title: `Matumizi — ${shift ? `${shift} shift` : `today, ${App.date(App.serverToday())}`}`,
       items: withPendingLines(expenses, "/api/staff/expenses"), editable: true, categories,
       save: async (lines) => {
-        const res = await App.put("/api/staff/expenses", { lines });
+        const res = await App.put("/api/staff/expenses", { lines, day, shift_id: shiftId });
         if (!res.queued) await loadExpenses();
         return res;
       },

@@ -2,8 +2,8 @@
 
 The training station copies the REAL station's set-up (read-only): its shift
 pattern, fuels, tanks, pumps (names, numbers and which tank they draw from) and
-selling prices. It then creates ONE practice attendant per shift (2 shifts -> 2
-trainees, 3 shifts -> 3) and builds a believable history through the same
+selling prices. It then creates practice attendants for every shift - as many as
+the real shift's "people per shift" (each works their own pumps) - and builds a believable history through the same
 services the real system uses. There is no manager login in the training portal.
 """
 import hashlib
@@ -19,7 +19,8 @@ from ..calculations import D, litres, money
 from ..calculations.fuel import refill_total_cost, revenue
 from ..extensions import db
 from ..models import (Expense, ExpenseCategory, FuelPrice, FuelRefill, FuelStock, FuelType, Pump, PumpReading,
-                      RefillConfirmation, ShiftCash, ShiftDeposit, ShiftDefinition, ShiftStaff, Station, StockAdjustment,
+                      RefillConfirmation, ShiftCash, ShiftDeposit, ShiftDefinition, ShiftStaff, ShiftStaffPump, Station,
+                      StockAdjustment,
                       StockThreshold, Supplier, SystemSetting, Tank, User, utcnow)
 from . import alerts, stock
 from .clock import now_local, practice_time_in_shift, station_tz, today_local
@@ -31,6 +32,7 @@ HISTORY_DAYS = 10
 TRAINEE_NAMES = ("Asha Juma", "Baraka Ali", "Upendo Mushi", "Daudi Mrema", "Neema Said", "Juma Hassani")
 FALLBACK_PRICES = {"PETROL": 3100, "DIESEL": 2950}
 COST_BELOW_PRICE = 450   # practice purchase cost per litre = selling price - this
+MAX_TRAINEES_PER_SHIFT = 4
 
 
 # ------------------------------------------------------------ real set-up
@@ -79,9 +81,7 @@ def read_real_setup():
             setup = {
                 "station": c.execute(text("SELECT name FROM stations WHERE id = :sid"), {"sid": sid}).scalar() or "Station",
                 "fuels": sorted(fuels.values(), key=lambda f: f["code"]),
-                "shifts": [{"code": r.code, "name": r.name, "start": str(r.start_time)[:5]}
-                           for r in c.execute(text("SELECT code, name, start_time FROM shift_definitions "
-                                                   "WHERE is_active AND station_id = :sid ORDER BY start_time"), {"sid": sid})],
+                "shifts": _real_shifts(c, sid),
                 "tanks": sorted(tanks.values(), key=lambda t: (t["fuel"], t["number"])),
                 "pumps": sorted(({"fuel": fuels[fid]["code"], "number": number, "name": name,
                                   "tank": tanks[tank_id]["number"] if tank_id in tanks else 1}
@@ -99,6 +99,20 @@ def read_real_setup():
         return None
     finally:
         engine.dispose()
+
+
+def _real_shifts(c, sid):
+    """Active shift types with their people per shift (1 if the real database is not upgraded yet)."""
+    sql = ("SELECT code, name, start_time{} FROM shift_definitions "
+           "WHERE is_active AND station_id = :sid ORDER BY start_time")
+    try:
+        rows = [(r.code, r.name, r.start_time, r.staff_needed)
+                for r in c.execute(text(sql.format(", staff_needed")), {"sid": sid})]
+    except Exception:
+        c.rollback()
+        rows = [(r.code, r.name, r.start_time, 1) for r in c.execute(text(sql.format("")), {"sid": sid})]
+    return [{"code": code, "name": name, "start": str(start)[:5], "people": int(people or 1)}
+            for code, name, start, people in rows]
 
 
 def fingerprint(setup):
@@ -137,6 +151,7 @@ def _apply_setup(sid, setup):
         d = ShiftDefinition.query.filter_by(station_id=sid, code=s["code"]).first() or \
             ShiftDefinition(station_id=sid, code=s["code"])
         d.name, d.start_time, d.is_active = s["name"], datetime.strptime(s["start"], "%H:%M").time(), True
+        d.staff_needed = s.get("people", 1)
         db.session.add(d)
     db.session.flush()
     resequence(sid)
@@ -181,6 +196,7 @@ def trainees(station_id):
         night = bool(start) and (start >= "18:00" or start < "05:00")
         result.append({"username": u.username, "full_name": u.full_name, "role": u.role,
                        "shift": d.name if d else None, "start": start, "end": end, "night": night,
+                       "people": (d.staff_needed or 1) if d else 1,
                        "about": f"{d.name} shift attendant" if d else "Pump attendant"})
     return result
 
@@ -227,7 +243,7 @@ def seed(rng=None):
     history_start = datetime.combine(first_day, datetime.min.time())
     db.session.add(SystemSetting(station_id=sid, key="go_live_date", value=first_day.isoformat()))
 
-    # ----------------------------------------------- people: one per shift
+    # ------------------------- people: as many per shift as the real one has
     for director in User.query.filter_by(role="DIRECTOR").all():   # the training portal is for staff only
         director.is_active = False
     system = User.query.filter_by(role="MANAGER").first()   # owns seeded approvals; cannot log in
@@ -235,15 +251,19 @@ def seed(rng=None):
     system.set_password(secrets.token_hex(24))
     system.is_active, system.must_change_password = False, False
     users = []
-    for i, definition in enumerate(active_definitions(sid)):
-        user = User(station_id=sid, role="STAFF", created_by=system.id, must_change_password=False,
-                    username=f"demo.{definition.code.lower()}"[:60],
-                    full_name=TRAINEE_NAMES[i % len(TRAINEE_NAMES)],
-                    default_shift_definition_id=definition.id)
-        # Nobody knows this password: trainees are signed in by the server (POST /api/demo/login).
-        user.set_password(secrets.token_hex(24))
-        db.session.add(user)
-        users.append(user)
+    pump_count = Pump.query.filter_by(station_id=sid, is_active=True).count()
+    for definition in active_definitions(sid):
+        # Each person needs a pump of their own, so never more trainees than pumps.
+        people = max(1, min(definition.staff_needed or 1, pump_count, MAX_TRAINEES_PER_SHIFT))
+        for n in range(1, people + 1):
+            user = User(station_id=sid, role="STAFF", created_by=system.id, must_change_password=False,
+                        username=f"demo.{definition.code.lower()}{n if n > 1 else ''}"[:60],
+                        full_name=TRAINEE_NAMES[len(users) % len(TRAINEE_NAMES)],
+                        default_shift_definition_id=definition.id)
+            # Nobody knows this password: trainees are signed in by the server (POST /api/demo/login).
+            user.set_password(secrets.token_hex(24))
+            db.session.add(user)
+            users.append(user)
     db.session.flush()
 
     # --------------------------------------------- prices, tanks, suppliers
@@ -281,6 +301,13 @@ def seed(rng=None):
     short_deposit = None
     for shift in past:
         worker = shift.staff[0].user if shift.staff else users[0]
+        # Several people on the shift: share the pumps out, one person per pump.
+        owner = {}
+        if len(shift.staff) > 1:
+            for i, pump in enumerate(pumps):
+                assignment = shift.staff[i % len(shift.staff)]
+                db.session.add(ShiftStaffPump(shift_staff_id=assignment.id, pump_id=pump.id))
+                owner[pump.id] = assignment.user_id
         shift.status, shift.opened_by = "OPEN", worker.id
         shift.started_at = _utc(shift.scheduled_start, sid)
         hours = (shift.scheduled_end - shift.scheduled_start).total_seconds() / 3600
@@ -314,8 +341,9 @@ def seed(rng=None):
             db.session.add(PumpReading(
                 station_id=sid, shift_id=shift.id, pump_id=pump.id, fuel_type_id=pump.fuel_type_id, tank_id=pump.tank_id,
                 opening_meter=meters[pump.id], expected_opening_meter=meters[pump.id], closing_meter=meters[pump.id] + sold,
-                fuel_sold=sold, price_per_litre=price, revenue=revenue(sold, price), recorded_by=worker.id,
-                updated_by=worker.id, opening_recorded_at=shift.started_at,
+                fuel_sold=sold, price_per_litre=price, revenue=revenue(sold, price),
+                recorded_by=owner.get(pump.id, worker.id), updated_by=owner.get(pump.id, worker.id),
+                opening_recorded_at=shift.started_at,
                 closing_recorded_at=_utc(shift.scheduled_end - timedelta(minutes=10), sid)))
             meters[pump.id] += sold
         db.session.flush()

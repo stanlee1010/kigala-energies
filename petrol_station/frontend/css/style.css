@@ -367,3 +367,22 @@ body:has(.auth-page--brand)::before {
 .offline-bar .btn { margin-left: auto; }
 .pending-note { color: var(--warn, #b45309); font-weight: 600; margin: .5rem 0 0; }
 body:has(#offline-bar) .toasts { bottom: 4.5rem; }   /* keep messages above the offline bar */
+body:has(#offline-bar) { padding-bottom: 6rem; }   /* the bar must never cover the last buttons */
+
+/* "Install the station app" invitation (staff, phones). */
+.install-tip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
+  margin: .75rem 1.25rem 0; padding: .7rem .9rem; border-radius: 10px;
+  background: var(--info-soft, #e0f2fe); color: var(--text, #0f172a); font-size: .92rem;
+}
+.install-tip__actions { display: flex; gap: .4rem; margin-left: auto; }
+
+/* Choosing pumps when several people work one shift. */
+.pump-picker { text-align: left; margin: .5rem 0 1rem; }
+.pump-picker__list { display: flex; flex-wrap: wrap; gap: .5rem; }
+.pump-choice {
+  display: flex; align-items: center; gap: .45rem; padding: .55rem .8rem;
+  border: 1px solid var(--border, #cbd5e1); border-radius: 10px; background: var(--card, #fff); cursor: pointer;
+}
+.pump-choice input { width: 1.2rem; height: 1.2rem; }
+.pump-choice.is-taken { opacity: .55; cursor: not-allowed; }

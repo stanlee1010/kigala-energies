@@ -64,6 +64,17 @@ def list_types():
     return jsonify(_types_payload(me.station_id))
 
 
+def _staff_needed(data):
+    try:
+        raw = data.get("staff_needed")
+        value = 1 if raw in (None, "") else int(raw)
+    except (TypeError, ValueError):
+        raise ApiError("People per shift must be a whole number")
+    if not 1 <= value <= 20:
+        raise ApiError("People per shift must be between 1 and 20")
+    return value
+
+
 @bp.post("/shift-types")
 @manager_required
 def create_type():
@@ -78,10 +89,13 @@ def create_type():
         raise ApiError(str(exc))
     if existing and existing.is_active:
         raise ApiError(f"A shift called {existing.name} already exists")
+    needed = _staff_needed(data)
     if existing:  # re-activate a type that was switched off earlier
         existing.name, existing.start_time, existing.is_active = name, start, True
+        existing.staff_needed = needed
     else:
-        db.session.add(ShiftDefinition(station_id=me.station_id, code=code, name=name, start_time=start))
+        db.session.add(ShiftDefinition(station_id=me.station_id, code=code, name=name, start_time=start,
+                                       staff_needed=needed))
     db.session.flush()
     return jsonify(_after_change(me, "MANAGER ADDED SHIFT TYPE", new={"name": name, "start_time": start})), 201
 
@@ -92,7 +106,10 @@ def update_type(type_id):
     me = current_user()
     d = get_or_404(ShiftDefinition, type_id, me.station_id, "Shift type")
     data = body()
-    before = {"name": d.name, "start_time": d.start_time.strftime("%H:%M"), "is_active": d.is_active}
+    before = {"name": d.name, "start_time": d.start_time.strftime("%H:%M"), "is_active": d.is_active,
+              "staff_needed": d.staff_needed}
+    if "staff_needed" in data:
+        d.staff_needed = _staff_needed(data)
     if "name" in data:
         d.name = require_text(data, "name", "Shift name", 60)
     if "start_time" in data:
@@ -102,7 +119,8 @@ def update_type(type_id):
             raise ApiError(str(exc))
     if "is_active" in data:
         d.is_active = bool(data["is_active"])
-    after = {"name": d.name, "start_time": d.start_time.strftime("%H:%M"), "is_active": d.is_active}
+    after = {"name": d.name, "start_time": d.start_time.strftime("%H:%M"), "is_active": d.is_active,
+             "staff_needed": d.staff_needed}
     db.session.flush()
     return jsonify(_after_change(me, "MANAGER CHANGED SHIFT TYPE", before, after))
 

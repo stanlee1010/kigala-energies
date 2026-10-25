@@ -6,7 +6,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from ..auth import current_user, login_required, manager_required
 from ..extensions import db
-from ..models import Alert, Expense, FuelRefill, Shift, Station, StockThreshold
+from ..models import Alert, Expense, FuelRefill, Shift, Station, StockThreshold, utcnow
 from ..services import audit
 from ..services.clock import now_local, paused_at, today_local
 from ..services.finance import chart_series, financial_summary
@@ -42,6 +42,9 @@ def server_time():
     db.session.commit()
     settings = get_settings(me.station_id)
     return jsonify({"now": now.isoformat(timespec="seconds"), "timezone": settings["timezone"],
+                    # Server UTC: phones measure their clock against it, so a save made offline can
+                    # say when it was typed in server time (never the phone's own clock).
+                    "utc": utcnow().isoformat(timespec="milliseconds"),
                     "currency": settings["currency"], "current_shift": shift.label,
                     "current_shift_type": shift.shift_type,
                     "paused": paused_at(me.station_id) is not None})

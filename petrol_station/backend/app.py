@@ -8,6 +8,7 @@ Run for production:
 """
 import logging
 import os
+import re
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -34,6 +35,9 @@ class JSONProvider(DefaultJSONProvider):
         if value is o:
             return DefaultJSONProvider.default(o)
         return value
+
+
+IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9-]{16,64}")
 
 
 def _tune_sqlite(engine):
@@ -208,6 +212,24 @@ def create_app(config_class=Config):
                 db.session.rollback()
                 app.logger.exception("Station checks failed")
             return None
+
+    # Registered last, so nothing else commits before the request's own work: the key is saved in
+    # the same transaction as the change (and rolled back with it if the save fails).
+    @app.before_request
+    def apply_each_save_once():
+        key = request.headers.get("Idempotency-Key")
+        if not key or request.method not in STATE_CHANGING or not request.path.startswith("/api/"):
+            return None
+        if not IDEMPOTENCY_KEY.fullmatch(key):
+            return jsonify({"error": "Invalid Idempotency-Key"}), 400
+        from .models import ProcessedRequest
+        if db.session.get(ProcessedRequest, key) is not None:
+            return jsonify({"ok": True, "already_saved": True})      # sent again: already applied
+        now = int(time.time())
+        db.session.add(ProcessedRequest(key=key, created_at=now))
+        if now % 50 == 0:   # now and then: forget keys older than 60 days
+            db.session.query(ProcessedRequest).filter(ProcessedRequest.created_at < now - 60 * 86400).delete()
+        return None
 
     register_cli(app)
 

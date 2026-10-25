@@ -36,13 +36,19 @@
   App.api = async function (method, url, data, opts = {}) {
     // Saves that can wait for the internet (see "offline" below): kept on this device and sent later.
     const canQueue = method === "PUT" && !opts.noQueue && QUEUEABLE.some((r) => r.test(url));
+    // Each such save gets a unique key that it keeps if it has to be sent again: the server
+    // applies a key only once, so a save whose reply was lost is never applied twice.
+    const key = opts.key || (canQueue ? newKey() : null);
+    const savedAt = canQueue ? App.serverUtcNow().toISOString() : null;   // when Save was pressed (server time)
     if (canQueue && (!navigator.onLine || readBox().length)) {
-      queue(method, url, data);      // keeps the order when older saves are still waiting
+      queue(method, url, data, key, savedAt);      // keeps the order when older saves are still waiting
       App.flushOutbox();
       return { queued: true };
     }
     // X-Requested-With proves the request comes from this site's own pages (anti-CSRF, checked by the server).
     const init = { method, headers: { Accept: "application/json", "X-Requested-With": "fetch" }, credentials: "same-origin" };
+    if (key) init.headers["Idempotency-Key"] = key;
+    if (opts.savedAt) init.headers["X-Saved-At"] = opts.savedAt;   // sent later: when it was typed
     if (data instanceof FormData) init.body = data;
     else if (data !== undefined) {
       init.headers["Content-Type"] = "application/json";
@@ -55,11 +61,14 @@
       if (ctrl) { init.signal = ctrl.signal; setTimeout(() => ctrl.abort(), 20000); }
       res = await fetch(url, init);
     } catch (e) {
-      if (canQueue) { queue(method, url, data); return { queued: true }; }
+      if (canQueue) { queue(method, url, data, key, savedAt); return { queued: true }; }
       const err = new Error("No internet connection — this was not saved. Please try again when the connection is back.");
       err.offline = true;
       throw err;
     }
+    // The service worker answered with a saved copy because there is no connection.
+    const copyAt = res.headers.get("X-Offline-Copy");
+    if (copyAt !== null) { App.offlineCopyAt = copyAt; renderOfflineBar(); }
     let payload = null;
     try { payload = await res.json(); } catch (e) { /* non-JSON */ }
     if (res.status === 401 && !opts.allow401) {
@@ -78,20 +87,32 @@
   };
   /* ----------------------------------------------- offline: save now, send later */
   // Meter readings, online money and expense sheets saved without internet stay on this device,
-  // in order, and are sent automatically when the connection is back. Only saves that replace a
-  // whole record (PUT) are kept, so sending one twice can never count money twice.
+  // in order, and are sent automatically when the connection is back. Every save carries its own
+  // Idempotency-Key, which the server applies only once: sending it again (reply lost, two tabs)
+  // can never count money twice. A save the server refuses (e.g. the shift was submitted
+  // meanwhile) is kept in a "could not be sent" list until the person has seen it.
   const QUEUEABLE = [/^\/api\/shifts\/\d+\/readings\/\d+$/, /^\/api\/shifts\/\d+\/online$/,
                      /^\/api\/shifts\/\d+\/expenses$/, /^\/api\/staff\/expenses$/];
   const boxKey = () => `kigala.outbox.${App.user ? App.user.id : "anon"}`;
-  function readBox() {
-    try { return JSON.parse(localStorage.getItem(boxKey()) || "[]"); } catch (e) { return []; }
+  const failedKey = () => `kigala.outbox-failed.${App.user ? App.user.id : "anon"}`;
+  function readList(name) {
+    try { return JSON.parse(localStorage.getItem(name) || "[]"); } catch (e) { return []; }
   }
-  function writeBox(items) {
-    try { localStorage.setItem(boxKey(), JSON.stringify(items)); } finally { renderOfflineBar(); }
+  const readBox = () => readList(boxKey());
+  const readFailed = () => readList(failedKey());
+  function writeList(name, items) {
+    try { localStorage.setItem(name, JSON.stringify(items)); } finally { renderOfflineBar(); }
   }
-  function queue(method, url, data) {
+  const writeBox = (items) => writeList(boxKey(), items);
+  function newKey() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));   // plain http (station Wi-Fi): no randomUUID
+    return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  function queue(method, url, data, key, savedAt) {
     const items = readBox().filter((i) => !(i.method === method && i.url === url));   // newest replaces older
-    items.push({ method, url, data, at: new Date().toISOString() });
+    items.push({ method, url, data, key: key || newKey(), savedAt: savedAt || App.serverUtcNow().toISOString(),
+                 at: new Date().toISOString() });
     try { writeBox(items); } catch (e) {
       throw new Error("No internet, and this phone could not keep the change (storage is full or blocked). Nothing was saved.");
     }
@@ -102,17 +123,25 @@
   let flushing = false;
   App.flushOutbox = async function () {
     if (flushing || !App.user || !navigator.onLine) return;
+    // Several open tabs share one outbox: only one sends at a time.
+    if (navigator.locks) return navigator.locks.request("kigala-outbox", { ifAvailable: true }, (lock) => lock && sendOutbox());
+    return sendOutbox();
+  };
+
+  async function sendOutbox() {
     flushing = true;
     renderOfflineBar();
     let sent = 0;
     try {
       for (let item = readBox()[0]; item; item = readBox()[0]) {
         try {
-          await App.api(item.method, item.url, item.data, { noQueue: true, allow401: true });
+          await App.api(item.method, item.url, item.data, { noQueue: true, allow401: true, key: item.key, savedAt: item.savedAt });
           sent += 1;
         } catch (err) {
           // No connection, server busy or logged out: keep it and try again later.
           if (err.offline || !err.status || err.status >= 500 || err.status === 429 || err.status === 401) break;
+          // Refused (e.g. the shift was submitted meanwhile): keep it where the person will see it.
+          writeList(failedKey(), readFailed().concat([{ ...item, error: err.message, failedAt: new Date().toISOString() }]));
           App.toast(`A change saved without internet could not be sent: ${err.message}`, "error", 12000);
         }
         writeBox(readBox().filter((i) => !(i.url === item.url && i.at === item.at)));
@@ -127,20 +156,48 @@
     }
   };
 
+  const WHAT = [[/\/readings\/\d+$/, "Meter reading"], [/\/online$/, "Online money"], [/expenses$/, "Expense sheet"]];
+  const describe = (item) => (WHAT.find(([r]) => r.test(item.url)) || [null, "Change"])[1];
+
+  function showFailed() {
+    const rows = readFailed().map((f) => `<li><strong>${App.esc(describe(f))}</strong>
+      <span class="small muted">saved ${App.datetime(f.at)}</span><br>
+      ${App.esc(f.error)}${f.data && f.data.lines ? `<br><span class="small">${f.data.lines.map((l) =>
+        `${App.esc(l.name)}: ${App.money(l.amount)}`).join(" · ")}</span>` : ""}
+      ${f.data && (f.data.opening_meter !== undefined || f.data.closing_meter !== undefined) ? `<br><span class="small">Opening ${App.esc(f.data.opening_meter ?? "—")}, closing ${App.esc(f.data.closing_meter ?? "—")}</span>` : ""}
+      ${f.data && f.data.online_expression ? `<br><span class="small">${App.esc(f.data.online_expression)}</span>` : ""}</li>`).join("");
+    App.modal({ title: "Changes that could not be sent", body: `<p>These were saved on this device without internet,
+      but the system refused them when they were sent. Tell the manager so the figures can be entered.</p><ul class="stack">${rows}</ul>`,
+      actions: [{ label: "Keep for now" }, { label: "I have told the manager — remove", cls: "btn--primary",
+        onClick: () => writeList(failedKey(), []) }] });
+  }
+
   function renderOfflineBar() {
     if (!document.body) return;
     let bar = document.getElementById("offline-bar");
     const waiting = App.user ? readBox().length : 0;
-    if (navigator.onLine && !waiting) { if (bar) bar.remove(); return; }
+    const failed = App.user ? readFailed().length : 0;
+    if (navigator.onLine) App.offlineCopyAt = null;
+    if (navigator.onLine && !waiting && !failed) { if (bar) bar.remove(); return; }
     if (!bar) {
       bar = App.h('<div id="offline-bar" class="offline-bar" role="status" aria-live="polite"></div>');
       document.body.appendChild(bar);
       App.on(bar, "click", "[data-send-now]", () => App.flushOutbox());
+      App.on(bar, "click", "[data-show-failed]", showFailed);
     }
     const saved = waiting ? `${waiting} change${waiting > 1 ? "s" : ""} saved on this device` : "";
-    bar.innerHTML = !navigator.onLine
-      ? `📴 <strong>No internet.</strong> ${saved ? `${saved} — sent automatically when the internet is back.` : "Readings, online money and expenses you save are kept on this device."}`
-      : `📤 ${flushing ? "Sending" : "Waiting to send"}: ${saved}. ${flushing ? "" : '<button type="button" class="btn btn--sm" data-send-now>Send now</button>'}`;
+    const oldest = waiting ? Math.min(...readBox().map((i) => Date.parse(i.at))) : Date.now();
+    const tooOld = Date.now() - oldest > 12 * 3600 * 1000
+      ? " ⚠️ <strong>Waiting for more than 12 hours — connect to the internet soon.</strong> Phones can delete data that waits too long, and after 3 days it can no longer be sent." : "";
+    const copy = App.offlineCopyAt === null || App.offlineCopyAt === undefined ? ""
+      : App.offlineCopyAt && !isNaN(new Date(App.offlineCopyAt))
+        ? ` Showing information saved at ${App.datetime(App.offlineCopyAt)} — it may be out of date.`
+        : " Showing information saved earlier — it may be out of date.";
+    const problems = failed ? ` <button type="button" class="btn btn--sm btn--danger" data-show-failed>⚠️ ${failed} could not be sent</button>` : "";
+    bar.innerHTML = (!navigator.onLine
+      ? `📴 <strong>No internet.</strong> ${saved ? `${saved} — sent automatically when the internet is back.` : "Readings, online money and expenses you save are kept on this device."}${tooOld}${copy}`
+      : waiting ? `📤 ${flushing ? "Sending" : "Waiting to send"}: ${saved}.${tooOld} ${flushing ? "" : '<button type="button" class="btn btn--sm" data-send-now>Send now</button>'}`
+        : "") + problems;
   }
   /** The message pages show after a save that is waiting for the internet. */
   App.savedOffline = () => App.toast("Saved on this device. It will be sent automatically when the internet is back.", "warn", 6000);
@@ -186,7 +243,7 @@
     if (!v) return "—";
     const d = new Date(v.endsWith("Z") ? v : v + "Z");
     return new Intl.DateTimeFormat("en-GB", {
-      timeZone: App.settings.timezone, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      timeZone: (App.settings || {}).timezone, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
     }).format(d).replace(",", "");
   };
   // Codes like OPEN or NIGHT_SHIFT -> "Night shift". Characters that could form HTML are dropped.
@@ -355,15 +412,18 @@
   window.withPendingLines = function (items, url) {
     const waiting = App.pending(url)[0];
     if (!waiting) return items;
-    const decided = items.filter((e) => !(e.status === "PENDING" && e.entered_by === App.user.id));
-    return decided.concat(waiting.data.lines.map((l) => ({ id: l.id, category: l.name, description: l.name,
+    const decided = items.filter((e) => e.locked || !(e.status === "PENDING" && e.entered_by === App.user.id));
+    return decided.concat(waiting.data.lines.map((l) => ({ id: l.id, category: l.name, description: l.name, was: l.was,  // (not sent yet)
       amount: l.amount, status: "PENDING", entered_by: App.user.id })));
   };
   let expenseSheetSeq = 0;
   App.expenseSheet = function (box, { items, editable, categories, save, title = "Matumizi — expenses" }) {
     const listId = `exp-words-${++expenseSheetSeq}`;
-    const canEdit = (e) => editable && e.status === "PENDING" && e.entered_by === App.user.id;
-    const line = (e) => `<tr data-line data-id="${e ? e.id : ""}">
+    const canEdit = (e) => editable && !e.locked && e.status === "PENDING" && e.entered_by === App.user.id;
+    // Saved lines remember their values when the sheet was opened, so the server can refuse a save
+    // that would overwrite a correction the manager made meanwhile.
+    const was = (e) => (e && e.id ? e.was || { name: e.category, amount: e.amount } : null);
+    const line = (e) => `<tr data-line data-id="${e ? e.id : ""}" ${was(e) ? `data-was-name="${App.esc(was(e).name)}" data-was-amount="${App.esc(was(e).amount)}"` : ""}>
       <td><input class="input" name="exp-name" list="${listId}" autocomplete="off" maxlength="60"
                  placeholder="e.g. Umeme" aria-label="Expense in your own words" value="${App.esc(e ? e.category : "")}"></td>
       <td><input class="input num" name="exp-amount" type="number" inputmode="decimal" min="0" step="0.01"
@@ -408,7 +468,8 @@
         if (!name.value.trim() && !amount.value.trim()) continue;          // empty line: ignored
         if (!name.value.trim()) { Validation.setError(name, "Write what it was for"); name.focus(); return; }
         if (!(Number(amount.value) > 0)) { Validation.setError(amount, "Enter the amount"); amount.focus(); return; }
-        lines.push({ id: row.dataset.id ? Number(row.dataset.id) : null, name: name.value.trim(), amount: amount.value });
+        lines.push({ id: row.dataset.id ? Number(row.dataset.id) : null, name: name.value.trim(), amount: amount.value,
+                     was: row.dataset.id ? { name: row.dataset.wasName, amount: row.dataset.wasAmount } : undefined });
       }
       const res = await save(lines);
       if (res.queued) App.savedOffline();
@@ -586,17 +647,66 @@
     }));
   }
 
+  /* ----------------------------------------------- install on the phone (keeps offline saves safe) */
+  // Phones (iPhones especially) can delete a website's stored data when it is not opened for some
+  // days; an app added to the home screen keeps it. Staff are invited once (dismiss = 14 days).
+  let installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; showInstallTip(); });
+  const installed = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+  function offerInstall() {
+    if (!window.isSecureContext || installed() || App.demo) return;
+    let until = 0;
+    try { until = Number(localStorage.getItem("kigala.install-dismissed") || 0); } catch (e) { /* ignore */ }
+    if (Date.now() < until) return;
+    App.wantsInstallTip = true;
+    showInstallTip();
+  }
+
+  function showInstallTip() {
+    if (!App.wantsInstallTip || document.getElementById("install-tip")) return;
+    const content = App.$(".content");
+    if (!content) return;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const how = installPrompt ? "" : ios
+      ? "Tap <strong>Share</strong> (the square with an arrow) and then <strong>Add to Home Screen</strong>."
+      : "Open the browser menu (⋮) and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.";
+    const tip = App.h(`<div id="install-tip" class="install-tip" role="note">
+      <span>📲 <strong>Install the station app on this phone</strong> so readings and expenses saved without internet are kept safely. ${how}</span>
+      <span class="install-tip__actions">${installPrompt ? '<button type="button" class="btn btn--sm btn--primary" data-install>Install</button>' : ""}
+      <button type="button" class="btn btn--sm" data-install-later>Not now</button></span></div>`);
+    content.before(tip);
+    App.on(tip, "click", "[data-install]", async () => {
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => null);
+      installPrompt = null;
+      tip.remove();
+    });
+    App.on(tip, "click", "[data-install-later]", () => {
+      try { localStorage.setItem("kigala.install-dismissed", String(Date.now() + 14 * 86400 * 1000)); } catch (e) { /* ignore */ }
+      tip.remove();
+    });
+  }
+
   /* ----------------------------------------------- server-synchronised clock */
 
-  let clockOffset = 0;  // server wall clock (as UTC ms) minus browser ms
+  // The last offsets measured against the server are kept on the device, so a page opened without
+  // internet still shows (and stamps offline saves with) server time, not the phone's own clock.
+  const savedClock = (() => { try { return JSON.parse(localStorage.getItem("kigala.clock") || "{}"); } catch (e) { return {}; } })();
+  let clockOffset = savedClock.station || 0;  // server wall clock (as UTC ms) minus browser ms
+  let utcOffset = savedClock.utc || 0;        // server UTC minus browser ms
   let pausedAt = null;  // training portal: the business clock does not move
   App.serverNow = () => new Date(pausedAt ?? Date.now() + clockOffset); // read with timeZone "UTC"
   App.serverToday = () => App.serverNow().toISOString().slice(0, 10);
+  /** The server's UTC time now (for "typed at" on saves made offline). */
+  App.serverUtcNow = () => new Date(Date.now() + utcOffset);
 
   async function syncClock() {
     try {
       const t = await App.get("/api/time");
       clockOffset = Date.parse(t.now + "Z") - Date.now();
+      if (t.utc) utcOffset = Date.parse(t.utc + "Z") - Date.now();
+      try { localStorage.setItem("kigala.clock", JSON.stringify({ station: clockOffset, utc: utcOffset })); } catch (e) { /* ignore */ }
       pausedAt = t.paused ? Date.parse(t.now + "Z") : null;
       App.currentShiftLabel = t.current_shift;
       const el = App.$("#clock-date");
@@ -710,6 +820,11 @@
     if ("serviceWorker" in navigator && window.isSecureContext && !App.demo) {
       navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline copy not available:", e));
     }
+    // Ask the browser not to delete this site's saved data (granted more readily to installed apps).
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persisted().then((yes) => yes || navigator.storage.persist()).catch(() => null);
+    }
+    if (App.user.role === "STAFF") offerInstall();
     renderOfflineBar();
     App.flushOutbox();
     setInterval(() => { if (readBox().length) App.flushOutbox(); }, 30000);

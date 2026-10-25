@@ -24,3 +24,16 @@ class IpBlock(db.Model):
     ip = db.Column(db.String(64), primary_key=True)
     blocked_until = db.Column(db.BigInteger, nullable=False)     # unix seconds
     reason = db.Column(db.String(255), nullable=False)
+
+
+class ProcessedRequest(db.Model):
+    """A save the device marked with a unique Idempotency-Key and the server has applied.
+
+    Saved in the same transaction as the change itself, so a save is applied exactly once
+    even if the device sends it again (e.g. the reply was lost on a weak connection).
+    """
+
+    __tablename__ = "processed_requests"
+
+    key = db.Column(db.String(64), primary_key=True)
+    created_at = db.Column(db.BigInteger, nullable=False)        # unix seconds

@@ -25,6 +25,9 @@ class ShiftDefinition(TimestampMixin, SerializerMixin, db.Model):
     start_time = db.Column(db.Time, nullable=False)
     sequence = db.Column(db.Integer, nullable=False, default=1)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    # How many people work this shift at the same time. With more than one, each person takes
+    # their own pumps (a pump belongs to one person per shift).
+    staff_needed = db.Column(db.Integer, nullable=False, default=1, server_default="1")
 
 
 class Shift(TimestampMixin, SerializerMixin, db.Model):

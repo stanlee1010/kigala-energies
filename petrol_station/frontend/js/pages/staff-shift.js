@@ -99,6 +99,27 @@ App.run(async () => {
     </div>`;
   }
 
+  /* Several people on one shift: each ticks the pumps they work on (a pump is one person's). */
+  function pumpPickerHtml(choice) {
+    const picked = new Set(choice.mine.length ? choice.mine : choice.suggested);
+    const others = choice.people.filter((p) => p.pumps.length && p.name !== App.user.full_name).map((p) => p.name);
+    return `<div class="pump-picker">
+      <p class="small"><strong>${choice.needed} people work this shift.</strong> Tick the pumps you will work on${others.length ? ` (taken pumps show who has them)` : ""}:</p>
+      <div class="pump-picker__list">${choice.pumps.map((p) => `
+        <label class="pump-choice ${p.taken_by ? "is-taken" : ""}">
+          <input type="checkbox" name="my-pump" value="${p.id}" ${p.taken_by ? "disabled" : ""} ${picked.has(p.id) && !p.taken_by ? "checked" : ""}>
+          ${App.esc(p.name)}${p.taken_by ? ` <span class="small muted">— ${App.esc(p.taken_by)}</span>` : ""}</label>`).join("")}</div>
+    </div>`;
+  }
+  const pickedPumps = () => App.$$('[name="my-pump"]:checked', page).map((c) => Number(c.value));
+  const needsPicker = () => data.pump_choice && data.pump_choice.needed > 1;
+
+  async function reloadShift(message) {
+    data = await App.get("/api/staff/my-shift");
+    if (message) App.toast(message, "ok");
+    render();
+  }
+
   function render() {
     if (!data.shift) {
       const cur = data.current_shift, prev = data.previous_shift;
@@ -111,25 +132,28 @@ App.run(async () => {
           ${prev ? `<p class="small muted">Previous shift: ${App.esc(prev.label)} — ${App.label(prev.status)}${prev.staff.length ? ` (${App.esc(prev.staff.join(", "))})` : ""}.
             Your opening meters start from its closing readings.</p>` : ""}
           ${cur.can_start
-            ? `<button class="btn btn--primary btn--lg btn--block" id="take-btn">▶ START SHIFT</button>
+            ? `${needsPicker() ? pumpPickerHtml(data.pump_choice) : ""}
+               <button class="btn btn--primary btn--lg btn--block" id="take-btn">▶ START SHIFT</button>
                <p class="small muted">${cur.status === "OPEN" ? "This shift is already open — you will join it." : "You will be put on this shift and it will open."}</p>`
-            : `<p>The ${App.esc(cur.label)} shift is ${App.label(cur.status).toLowerCase()}. Ask the manager if you need to work on it.</p>`}
+            : ["SCHEDULED", "OPEN"].includes(cur.status)
+              ? `<p>The ${App.esc(cur.label)} shift already has its ${cur.staff_needed} ${cur.staff_needed === 1 ? "person" : "people"}${cur.staff.length ? ` (${App.esc(cur.staff.join(", "))})` : ""}. Ask the manager if you should work too.</p>`
+              : `<p>The ${App.esc(cur.label)} shift is ${App.label(cur.status).toLowerCase()}. Ask the manager if you need to work on it.</p>`}
         </div>
         <div class="card center">
           <a class="btn btn--lg btn--block" href="/staff/refill.html">🚚 Record a fuel refill</a>
         </div>`;
       const take = App.$("#take-btn");
       if (take) take.addEventListener("click", () => App.run(async () => {
-        const res = await App.post("/api/staff/start-shift");
-        data.shift = res.shift;
-        data.is_current = true;
-        App.toast("Shift started. Enter your opening readings.", "ok");
-        render();
+        if (needsPicker() && !pickedPumps().length) { App.toast("Tick the pumps you will work on.", "error"); return; }
+        await App.post("/api/staff/start-shift", { pump_ids: needsPicker() ? pickedPumps() : [] });
+        await reloadShift("Shift started. Enter your opening readings.");
       }));
       return;
     }
     const s = data.shift;
-    const myPumps = s.readings.map((r) => r.pump_name).join(", ") || "All pumps";
+    const choosing = needsPicker() && data.pump_choice.must_choose;
+    const myPumps = choosing ? "not chosen yet" : s.readings.map((r) => r.pump_name).join(", ") || "All pumps";
+    const coworkers = needsPicker() ? data.pump_choice.people.filter((p) => p.name !== App.user.full_name).map((p) => p.name) : [];
     page.innerHTML = `
       <section class="shift-hero">
         <div class="small">MY CURRENT SHIFT ${data.is_current ? "" : "· (not the current time slot)"}</div>
@@ -139,7 +163,9 @@ App.run(async () => {
           <span>🕒 ${App.localDateTime(s.scheduled_start).slice(11)} – ${App.localDateTime(s.scheduled_end).slice(11)}</span>
           <span>Status: <strong>${App.label(s.status)}</strong></span>
         </div>
-        <div class="meta"><span>⛽ Assigned pumps: <strong>${App.esc(myPumps)}</strong></span></div>
+        <div class="meta"><span>⛽ My pumps: <strong>${App.esc(myPumps)}</strong></span>
+          ${needsPicker() && !choosing && ["OPEN", "FLAGGED", "SCHEDULED"].includes(s.status) ? '<button type="button" class="btn btn--sm" id="change-pumps">Change my pumps</button>' : ""}
+          ${coworkers.length ? `<span>👥 Also on this shift: <strong>${App.esc(coworkers.join(", "))}</strong></span>` : ""}</div>
         <div class="money"><span>Money expected from this shift (sales)</span><strong>${App.money(s.expected_money)}</strong>
           <span>${s.revenue_by_fuel.map((f) => `${App.esc(f.fuel)}: ${App.money(f.revenue)}`).join(" · ")}</span>
           <span style="display:block;margin-top:.4rem">Cash to hand in (after online money and expenses): <strong style="display:inline;font-size:1.1rem">${App.money(s.money.balance)}</strong></span></div>
@@ -149,7 +175,11 @@ App.run(async () => {
       ${s.status === "CLOSED" ? '<div class="banner banner--ok"><div class="banner__icon">✅</div><div class="banner__body"><h2>Shift closed</h2><p>The manager approved this shift.</p></div></div>' : ""}
       ${stepsHtml(s.tasks)}
       ${s.status === "SCHEDULED" ? `<div class="card center"><p>Start your shift to begin entering opening readings.</p>
+        ${needsPicker() ? pumpPickerHtml(data.pump_choice) : ""}
         <button class="btn btn--primary btn--lg btn--block" id="start-btn">▶ START MY SHIFT</button></div>` : ""}
+      ${choosing && ["OPEN", "FLAGGED"].includes(s.status) ? `<div class="card center choose-pumps"><h2>Choose your pumps</h2>
+        ${pumpPickerHtml(data.pump_choice)}
+        <button class="btn btn--primary btn--lg btn--block" id="save-pumps">Save my pumps</button></div>` : ""}
       ${s.status !== "SCHEDULED" ? `
         <h2 class="section-title">1. Pump meter readings</h2>
         <div class="stack">${s.readings.map(readingHtml).join("") || '<div class="empty">No pumps assigned.</div>'}</div>
@@ -206,11 +236,29 @@ App.run(async () => {
     if (data.shift) applyPending();
     const start = App.$("#start-btn");
     if (start) start.addEventListener("click", () => App.run(async () => {
-      const res = await App.post(`/api/shifts/${data.shift.id}/start`);
-      data.shift = res.shift;
-      App.toast("Shift started. Enter your opening readings.", "ok");
-      render();
+      if (needsPicker() && !pickedPumps().length) { App.toast("Tick the pumps you will work on.", "error"); return; }
+      await App.post(`/api/shifts/${data.shift.id}/start`, { pump_ids: needsPicker() ? pickedPumps() : [] });
+      await reloadShift("Shift started. Enter your opening readings.");
     }));
+    const savePumps = App.$("#save-pumps");
+    if (savePumps) savePumps.addEventListener("click", () => App.run(async () => {
+      if (!pickedPumps().length) { App.toast("Tick the pumps you will work on.", "error"); return; }
+      await App.put(`/api/shifts/${data.shift.id}/my-pumps`, { pump_ids: pickedPumps() });
+      await reloadShift("Your pumps are saved.");
+    }));
+    const changePumps = App.$("#change-pumps");
+    if (changePumps) changePumps.addEventListener("click", () => {
+      const form = App.h(`<div>${pumpPickerHtml(data.pump_choice)}</div>`);
+      App.modal({ title: "Change my pumps", body: form, actions: [{ label: "Cancel" }, {
+        label: "Save", cls: "btn--primary",
+        onClick: async () => {
+          const ids = App.$$('[name="my-pump"]:checked', form).map((c) => Number(c.value));
+          if (!ids.length) { App.toast("Tick at least one pump.", "error"); return false; }
+          await App.put(`/api/shifts/${data.shift.id}/my-pumps`, { pump_ids: ids });
+          await reloadShift("Your pumps are saved.");
+        },
+      }] });
+    });
 
     App.$$("[data-pump]", page).forEach((card) => {
       const o = App.$('[name="opening_meter"]', card), c = App.$('[name="closing_meter"]', card);
@@ -233,6 +281,9 @@ App.run(async () => {
         if (o.value !== "") payload.opening_meter = o.value;
         if (c.value !== "") payload.closing_meter = c.value;
         if (!Object.keys(payload).length) { App.toast("Enter a meter reading first", "error"); return; }
+        // What the reading was when this page got it: the server refuses to overwrite a newer change.
+        payload.based_on = { opening_meter: reading.opening_recorded_at ? reading.opening_meter : null,
+                             closing_meter: reading.closing_meter };
         btn.disabled = true;
         try {
           const res = await App.put(`/api/shifts/${data.shift.id}/readings/${card.dataset.pump}`, payload);
@@ -256,7 +307,8 @@ App.run(async () => {
     const saveOnline = App.$("#online-save");
     if (saveOnline) saveOnline.addEventListener("click", () => App.run(async () => {
       if (addUp(online.value) === null) { online.focus(); return; }
-      const res = await App.put(`/api/shifts/${data.shift.id}/online`, { online_expression: online.value });
+      const res = await App.put(`/api/shifts/${data.shift.id}/online`, { online_expression: online.value,
+        based_on: { online_expression: data.shift.money.online_expression } });
       if (res.queued) { App.savedOffline(); return; }
       data.shift = res.shift;
       App.toast(`Online money saved: ${App.money(res.shift.money.online)}.`, "ok");
@@ -279,6 +331,13 @@ App.run(async () => {
 
     const submit = App.$("#submit-btn");
     if (submit) submit.addEventListener("click", () => App.run(async () => {
+      // Saves made without internet must reach the server first, or the shift would be
+      // submitted without them (and they would then be refused).
+      if (App.pending("/api/").length) await App.flushOutbox();
+      if (App.pending("/api/").length) {
+        App.toast("Some changes saved without internet have not been sent yet. Wait for the internet (see the bar at the bottom), then submit.", "error", 10000);
+        return;
+      }
       const ok = await App.ask({ title: "Submit shift?", message: `Money expected from this shift: <strong>${App.money(data.shift.expected_money)}</strong>. After submitting you cannot change the readings.`, confirmLabel: "Yes, submit" });
       if (!ok) return;
       const res = await App.post(`/api/shifts/${data.shift.id}/submit`);

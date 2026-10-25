@@ -9,6 +9,8 @@
 
   async function login(credentials, url) {
     const { user } = await App.api("POST", url || "/api/auth/login", credentials, { allow401: true });
+    // Saved copies of pages' data belong to whoever used this device before: forget them.
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage("clear-data");
     const next = new URLSearchParams(location.search).get("next");
     if (user.must_change_password) location.href = "/change-password.html";
     else location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : App.home(user);
@@ -58,7 +60,7 @@
         <button type="button" class="demo-account" data-user="${App.esc(a.username)}">
           <span style="font-size:1.6rem">${a.night ? "🌙" : "☀️"}</span>
           <span><strong>${App.esc(a.shift || "Practice")} shift${a.start ? ` · ${App.esc(a.start)}–${App.esc(a.end)}` : ""}</strong>
-            <small>${App.esc(a.full_name)} · ${App.esc(a.username)}</small></span>
+            <small>${App.esc(a.full_name)} · ${App.esc(a.username)}${a.people > 1 ? ` · ${a.people} people, own pumps` : ""}</small></span>
         </button>`).join("");
       App.on(App.$("#demo-accounts"), "click", "[data-user]", (e, b) => {
         login({ username: b.dataset.user }, "/api/demo/login").catch(App.error);

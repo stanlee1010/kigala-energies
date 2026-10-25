@@ -49,6 +49,7 @@ App.run(async () => {
         columns: [
           { key: "name", label: "Shift", render: (t) => `<strong>${App.esc(t.name)}</strong>` },
           { key: "start_time", label: "Hours", cls: "nowrap", render: (t) => t.is_active ? `${t.start_time} – ${t.end_time}${t.ends_next_day ? " (+1 day)" : ""} · ${App.num(t.hours, 1)} h` : App.esc(t.start_time) },
+          { key: "staff_needed", label: "People per shift", cls: "num", render: (t) => App.num(t.staff_needed || 1) },
           { key: "staff_count", label: "Regular staff", cls: "num", render: (t) => t.is_active && !t.staff_count ? '<span class="text-warn">0</span>' : t.staff_count },
           { key: "is_active", label: "Status", render: (t) => t.is_active ? App.badge("ACTIVE", "On") : App.badge("DISABLED", "Off") },
           { key: "a", label: "", cls: "actions", render: (t) => `<button class="btn btn--sm" data-edit-type="${t.id}">Edit</button>
@@ -65,6 +66,8 @@ App.run(async () => {
     return App.h(`<form novalidate><div class="form-grid">
       <div class="field"><label>Shift name</label><input class="input" name="name" value="${App.esc(t ? t.name : "")}" placeholder="e.g. Afternoon" required></div>
       <div class="field"><label>Starts at</label><input class="input" type="time" name="start_time" value="${t ? t.start_time : "14:00"}" required></div>
+      <div class="field"><label>People per shift</label><input class="input" type="number" name="staff_needed" min="1" max="20" step="1" value="${t ? t.staff_needed || 1 : 1}" required>
+        <span class="hint">With more than one, each person works their own pumps.</span></div>
     </div><p class="small muted">The shift runs until the next shift starts. Shifts that have not started yet are re-timed automatically.</p></form>`);
   }
 
@@ -242,7 +245,7 @@ App.run(async () => {
           ${s.deposit ? `<div class="kpi__sub ${Number(s.deposit.difference) ? "text-danger" : "text-ok"}">Difference ${App.signed(s.deposit.difference, App.money)}</div>` : ""}</div>
       </div>
 
-      <section><h3>Assigned staff</h3>
+      <section><h3>Assigned staff <span class="small muted">· ${s.staff.length} of ${s.staff_needed || 1} ${(s.staff_needed || 1) === 1 ? "person" : "people"}</span></h3>
         ${App.table({ columns: [
           { key: "full_name", label: "Staff", render: (a) => App.esc(a.full_name) + (a.source === "ROSTER" ? ' <span class="badge">regular</span>' : a.source === "SELF" ? ' <span class="badge">started it</span>' : "") },
           { key: "pumps", label: "Pumps", render: (a) => App.esc(a.pumps.join(", ") || "All pumps") },
@@ -253,8 +256,11 @@ App.run(async () => {
             <div class="field"><label>Staff member</label><select class="input" name="user_id" required>${App.options(activeStaff, "id", "full_name", null, "Choose staff…")}</select></div>
             <button class="btn btn--primary" type="submit">Assign / update</button>
           </div>
-          <div class="row small">Pumps (leave all unticked = all pumps):
-            ${pumps.filter((p) => p.is_active).map((p) => `<label class="checkbox"><input type="checkbox" name="pump" value="${p.id}"> ${App.esc(p.pump_name)}</label>`).join("")}</div>
+          <div class="row small">Pumps (leave all unticked = the pumps nobody else has). A pump belongs to one person:
+            ${pumps.filter((p) => p.is_active).map((p) => {
+              const owner = s.staff.find((a) => a.pump_ids.includes(p.id));
+              return `<label class="checkbox"><input type="checkbox" name="pump" value="${p.id}"> ${App.esc(p.pump_name)}${owner ? ` <span class="muted">(${App.esc(owner.full_name)})</span>` : ""}</label>`;
+            }).join("")}</div>
         </form>`}
       </section>
 

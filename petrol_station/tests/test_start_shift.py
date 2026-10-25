@@ -7,21 +7,28 @@ def _staff(app, manager, username):
     return login(app, username, "Temp1234")
 
 
+def two_people_per_shift(manager):
+    for t in manager.get("/api/shift-types").json["shift_types"]:
+        manager.put(f"/api/shift-types/{t['id']}", json={"staff_needed": 2})
+    return [p["id"] for p in manager.get("/api/pumps").json["pumps"] if p["is_active"]]
+
+
 def test_staff_start_the_shift_running_now_and_others_join_it(app, manager):
+    pumps = two_people_per_shift(manager)
     asha, juma = _staff(app, manager, "asha01"), _staff(app, manager, "juma01")
 
     view = asha.get("/api/staff/my-shift").json
     cur = view["current_shift"]
     assert view["shift"] is None and cur["can_start"] and cur["status"] == "SCHEDULED"
 
-    shift = asha.post("/api/staff/start-shift").json["shift"]
+    shift = asha.post("/api/staff/start-shift", json={"pump_ids": pumps[:1]}).json["shift"]
     assert shift["id"] == cur["id"] and shift["status"] == "OPEN" and shift["readings"]
     mine = asha.get("/api/staff/my-shift").json
     assert mine["shift"]["id"] == cur["id"] and mine["is_current"]
 
     # A second attendant joins the open shift instead of opening a new one.
     assert juma.get("/api/staff/my-shift").json["current_shift"]["can_start"]
-    assert juma.post("/api/staff/start-shift").json["shift"]["id"] == cur["id"]
+    assert juma.post("/api/staff/start-shift", json={"pump_ids": pumps[1:]}).json["shift"]["id"] == cur["id"]
     staff = manager.get(f"/api/shifts/{cur['id']}").json["shift"]["staff"]
     assert {(s["full_name"], s["source"]) for s in staff} == {("Asha01", "SELF"), ("Juma01", "SELF")}
     assert asha.post("/api/staff/start-shift").status_code == 200          # pressing twice is harmless

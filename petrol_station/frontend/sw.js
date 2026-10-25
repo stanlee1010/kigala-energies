@@ -7,7 +7,7 @@
    - Saves are never handled here: the page keeps them in its outbox (see app.js).
    Works on HTTPS (and on localhost); browsers do not allow it on plain http://<ip>.
    ========================================================================== */
-const VERSION = "v1";
+const VERSION = "v3";
 const SHELL = `shell-${VERSION}`;
 const API = `api-${VERSION}`;
 const PRECACHE = [
@@ -17,6 +17,7 @@ const PRECACHE = [
   "/js/app.js", "/js/validation.js", "/js/pages/login.js", "/js/pages/change-password.js",
   "/js/pages/staff-shift.js", "/js/pages/staff-records.js", "/js/pages/staff-refill.js",
   "/img/logo.png", "/img/logo-mark.png", "/img/login-bg.png", "/img/favicon.png",
+  "/manifest.webmanifest", "/img/icon-192.png", "/img/icon-512.png", "/img/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -39,10 +40,21 @@ async function networkFirst(request, cacheName, ms) {
   const cache = await caches.open(cacheName);
   try {
     const response = await Promise.race([fetch(request), timeout(ms)]);
-    if (response.ok && response.type === "basic") cache.put(request, response.clone());
+    if (response.ok && response.type === "basic") {
+      // Keep the time it was saved, so the page can say how old an offline copy is.
+      const headers = new Headers(response.headers);
+      headers.set("X-Saved-At", new Date().toISOString());
+      const body = await response.clone().blob();
+      cache.put(request, new Response(body, { status: response.status, statusText: response.statusText, headers }));
+    }
     return response;
   } catch (err) {
     const saved = await cache.match(request, { ignoreSearch: cacheName === SHELL });
+    if (saved && cacheName === API) {
+      const headers = new Headers(saved.headers);
+      headers.set("X-Offline-Copy", saved.headers.get("X-Saved-At") || "");
+      return new Response(await saved.blob(), { status: saved.status, headers });
+    }
     if (saved) return saved;
     if (cacheName === API) {
       return new Response(JSON.stringify({ error: "No internet connection.", offline: true }),
@@ -57,7 +69,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname === "/healthz") return;
   if (url.pathname.startsWith("/api/")) {
-    if (/^\/api\/(attachments|reports|demo)/.test(url.pathname)) return;   // files and training: never kept
+    // Files, training and the clock are never kept: an old saved time would make the clock wrong.
+    if (/^\/api\/(attachments|reports|demo|time)/.test(url.pathname)) return;
     event.respondWith(networkFirst(request, API, 8000));
   } else {
     event.respondWith(networkFirst(request, SHELL, 5000));

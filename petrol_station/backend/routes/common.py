@@ -1,11 +1,12 @@
 """Request parsing helpers shared by all API routes."""
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
-from flask import request
+from flask import current_app, request
 
 from ..calculations import D
 from ..extensions import db
+from ..models.base import utcnow as utcnow_naive
 
 
 class ApiError(Exception):
@@ -139,3 +140,64 @@ def color_field(data, key="color"):
     if value and not re.fullmatch(r"#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?", value):
         raise ApiError("Colour must look like #1a2b3c")
     return value
+
+
+# ---------------------------------------------------------------- saves made without internet
+OFFLINE_MAX_AGE = timedelta(days=3)
+
+
+def saved_at(not_before=None):
+    """When the person pressed Save (UTC). Normally now; a save kept on the phone while offline
+    sends X-Saved-At, measured with the SERVER's clock (the phone keeps its offset to the server,
+    never its own time). Times in the future become now; anything older than 3 days is refused;
+    nothing earlier than `not_before` (e.g. the shift start) is accepted."""
+    now = utcnow_naive()
+    raw = request.headers.get("X-Saved-At")
+    if not raw or current_app.config.get("DEMO_MODE"):
+        return now
+    try:
+        t = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise ApiError("Invalid X-Saved-At time")
+    if t.tzinfo is not None:
+        t = t.astimezone(timezone.utc).replace(tzinfo=None)
+    if t < now - OFFLINE_MAX_AGE:
+        raise ApiError("This was saved without internet more than 3 days ago and can no longer be sent. "
+                       "Give the figures to the manager.", 409)
+    if not_before is not None and t < not_before:
+        t = not_before
+    return min(t, now)
+
+
+def offline_note(station_id, when):
+    """Audit-log note for a save that was typed offline and arrived later (None otherwise)."""
+    now = utcnow_naive()
+    if now - when < timedelta(minutes=2):
+        return None
+    from ..services.clock import station_tz
+    tz = station_tz(station_id)
+    fmt = lambda t: t.replace(tzinfo=timezone.utc).astimezone(tz).strftime("%d/%m/%Y %H:%M")
+    return f"Saved on the phone at {fmt(when)} without internet; received {fmt(now)}."
+
+
+def join_notes(*notes):
+    return " ".join(n for n in notes if n) or None
+
+
+def check_unchanged(current, based_on, what):
+    """A save says which values it was based on. If someone changed them since, refuse instead
+    of overwriting their newer values (the person sees both and can check with the manager)."""
+    changed = {k: v for k, v in current.items() if _norm(v) != _norm(based_on.get(k))}
+    if changed:
+        now_text = ", ".join(f"{k.replace('_', ' ')} {v if v not in (None, '') else '(empty)'}" for k, v in current.items())
+        raise ApiError(f"Someone changed this {what} after you saved yours, so yours was not used. "
+                       f"It now shows: {now_text}. Check with the manager before entering it again.", 409)
+
+
+def _norm(value):
+    if value in (None, ""):
+        return None
+    try:
+        return D(value)
+    except (ValueError, ArithmeticError):
+        return " ".join(str(value).split())

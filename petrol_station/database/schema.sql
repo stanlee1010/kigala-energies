@@ -22,6 +22,12 @@ CREATE TABLE ip_blocks (
 	PRIMARY KEY (ip)
 );
 
+CREATE TABLE processed_requests (
+	key VARCHAR(64) NOT NULL, 
+	created_at BIGINT NOT NULL, 
+	PRIMARY KEY (key)
+);
+
 CREATE TABLE rate_counters (
 	key VARCHAR(120) NOT NULL, 
 	window_start BIGINT NOT NULL, 
@@ -62,6 +68,7 @@ CREATE TABLE shift_definitions (
 	start_time TIME WITHOUT TIME ZONE NOT NULL, 
 	sequence INTEGER NOT NULL, 
 	is_active BOOLEAN NOT NULL, 
+	staff_needed INTEGER DEFAULT '1' NOT NULL, 
 	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
 	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
 	PRIMARY KEY (id), 

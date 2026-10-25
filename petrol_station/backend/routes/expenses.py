@@ -18,7 +18,8 @@ from ..extensions import db
 from ..models import Attachment, Expense, ExpenseCategory, Shift, ShiftStaff, User, utcnow
 from ..services import audit
 from ..services.clock import today_local
-from .common import (ApiError, body, clean_text, date_field, decimal_field, get_or_404, optional_text, require_text)
+from .common import (ApiError, body, check_unchanged, clean_text, date_field, decimal_field, get_or_404,
+                     offline_note, optional_text, require_text, saved_at)
 
 bp = Blueprint("expenses", __name__, url_prefix="/api")
 
@@ -181,6 +182,7 @@ def _save_sheet(me, scope, lines, new_expense):
     if not isinstance(lines, list) or len(lines) > 100:
         raise ApiError("Send the expense lines as a list (at most 100)")
     mine = {e.id: e for e in scope.filter(Expense.status == "PENDING", Expense.entered_by == me.id)}
+    note = offline_note(me.station_id, saved_at())
     kept, created, changed = set(), 0, 0
     for n, line in enumerate(lines, start=1):
         if not isinstance(line, dict):
@@ -194,6 +196,10 @@ def _save_sheet(me, scope, lines, new_expense):
             if expense is None:
                 raise ApiError(f"Line {n} can no longer be changed (the manager may have decided it)", 409)
             kept.add(expense.id)
+            if isinstance(line.get("was"), dict):      # the manager may have corrected it meanwhile
+                check_unchanged({"expense": expense.category.name, "amount": expense.amount},
+                                {"expense": line["was"].get("name"), "amount": line["was"].get("amount")},
+                                f"expense (line {n})")
             data["expense_date"] = expense.expense_date.isoformat()
             before = audit.snapshot(expense)
             _apply(expense, data, me)
@@ -202,7 +208,8 @@ def _save_sheet(me, scope, lines, new_expense):
             old, new = audit.changed_fields(before, audit.snapshot(expense))
             if new:
                 changed += 1
-                audit.log(me.station_id, me.id, f"{me.role} EDITED EXPENSE", "expenses", expense.id, old, new)
+                audit.log(me.station_id, me.id, f"{me.role} EDITED EXPENSE", "expenses", expense.id, old, new,
+                          reason=note)
         else:
             expense = new_expense()
             data["expense_date"] = expense.expense_date.isoformat()
@@ -214,12 +221,12 @@ def _save_sheet(me, scope, lines, new_expense):
             db.session.flush()
             created += 1
             audit.log(me.station_id, me.id, f"{me.role} RECORDED EXPENSE", "expenses", expense.id,
-                      new=audit.snapshot(expense))
+                      new=audit.snapshot(expense), reason=note)
     removed = [e for i, e in mine.items() if i not in kept]
     for expense in removed:
         expense.status, expense.status_reason = "CANCELLED", "Removed from the expense sheet"
         audit.log(me.station_id, me.id, f"{me.role} CANCELLED EXPENSE", "expenses", expense.id,
-                  {"status": "PENDING"}, {"status": "CANCELLED"})
+                  {"status": "PENDING"}, {"status": "CANCELLED"}, reason=note)
     db.session.commit()
     return jsonify({"ok": True, "added": created, "changed": changed, "removed": len(removed)})
 
@@ -241,42 +248,71 @@ def save_shift_expenses(shift_id):
         expense_date=shift.shift_date))
 
 
-def _my_sheet(me):
-    """A staff member's own expense sheet: today's expenses plus those of the shift they are working.
+def _open_shift_of(me, today):
+    return (Shift.query.join(ShiftStaff, ShiftStaff.shift_id == Shift.id)
+            .filter(ShiftStaff.user_id == me.id, Shift.station_id == me.station_id,
+                    Shift.status.in_(("OPEN", "FLAGGED")), Shift.shift_date >= today - timedelta(days=1))
+            .order_by(Shift.shift_date.desc(), Shift.sequence.desc()).first())
 
-    New lines go on that open shift (so they come off its cash), otherwise on today.
+
+def _my_sheet(me, data=None):
+    """A staff member's own expense sheet: one day's expenses plus those of the shift they work.
+
+    Editable scope = expenses with no shift on that day + the open shift's. Expenses of a shift
+    that is submitted or closed are shown locked and never changed here (staff cannot change
+    closed shifts). A save sent later (offline) says which day and shift it was made for, so it
+    lands there - not on whatever day or shift is current when it finally arrives.
     """
     today = today_local(me.station_id)
-    shift = (Shift.query.join(ShiftStaff, ShiftStaff.shift_id == Shift.id)
-             .filter(ShiftStaff.user_id == me.id, Shift.station_id == me.station_id,
-                     Shift.status.in_(("OPEN", "FLAGGED")), Shift.shift_date >= today - timedelta(days=1))
-             .order_by(Shift.shift_date.desc(), Shift.sequence.desc()).first())
-    where = Expense.expense_date == today
+    day = today
+    if data and data.get("day"):
+        day = date_field(data["day"], "Day")
+        if day > today or day < today - timedelta(days=2):
+            raise ApiError("This expense sheet is too old to change. Ask the manager to record it.", 409)
+    if data is not None and "shift_id" in data:          # a save: the shift the sheet was made for
+        shift = None
+        if data["shift_id"]:
+            shift = get_or_404(Shift, int(data["shift_id"]), me.station_id, "Shift")
+            if all(a.user_id != me.id for a in shift.staff) or shift.status not in ("OPEN", "FLAGGED"):
+                raise ApiError(f"The {shift.label} shift has been submitted, so its expenses can no longer "
+                               "be changed. Ask the manager.", 409)
+    else:
+        shift = _open_shift_of(me, today)
+    own = (Expense.station_id == me.station_id) & (Expense.entered_by == me.id)
+    editable = (Expense.expense_date == day) & Expense.shift_id.is_(None)
     if shift is not None:
-        where = db.or_(where, Expense.shift_id == shift.id)
-    scope = Expense.query.filter(Expense.station_id == me.station_id, Expense.entered_by == me.id, where)
-    return today, shift, scope
+        editable = db.or_(editable, Expense.shift_id == shift.id)
+    return day, shift, Expense.query.filter(own, editable), Expense.query.filter(own, Expense.expense_date == day)
 
 
 @bp.get("/staff/expenses")
 @login_required
 def my_expense_sheet():
     me = current_user()
-    today, shift, scope = _my_sheet(me)
-    rows = scope.filter(Expense.status != "CANCELLED").order_by(Expense.id).all()
+    day, shift, scope, whole_day = _my_sheet(me)
+    editable_ids = {e.id for e in scope}
+    rows = whole_day.filter(Expense.status != "CANCELLED").all()
+    if shift is not None:
+        rows += [e for e in scope.filter(Expense.status != "CANCELLED") if e.expense_date != day]
     names = _names(me.station_id)
-    return jsonify({"day": today.isoformat(), "shift": shift.label if shift else None,
-                    "expenses": [_expense_dict(e, names) for e in rows]})
+    items = []
+    for e in sorted(rows, key=lambda e: e.id):
+        item = _expense_dict(e, names)
+        item["locked"] = e.id not in editable_ids          # e.g. a submitted shift's expense
+        items.append(item)
+    return jsonify({"day": day.isoformat(), "shift": shift.label if shift else None,
+                    "shift_id": shift.id if shift else None, "expenses": items})
 
 
 @bp.put("/staff/expenses")
 @login_required
 def save_my_expense_sheet():
     me = current_user()
-    today, shift, scope = _my_sheet(me)
-    return _save_sheet(me, scope, body().get("lines"), lambda: Expense(
+    data = body()
+    day, shift, scope, _ = _my_sheet(me, data)
+    return _save_sheet(me, scope, data.get("lines"), lambda: Expense(
         station_id=me.station_id, entered_by=me.id, status="PENDING",
-        shift_id=shift.id if shift else None, expense_date=shift.shift_date if shift else today))
+        shift_id=shift.id if shift else None, expense_date=shift.shift_date if shift else day))
 
 
 @bp.put("/expenses/<int:expense_id>")

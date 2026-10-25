@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from backend.app import create_app
-from backend.config import DemoTestConfig
+from backend.config import DemoTestConfig, TestConfig
 from backend.extensions import db
 
 from .conftest import browser_client, login
@@ -95,3 +95,47 @@ def test_real_system_refuses_training_actions(app, manager):
     info = app.test_client().get("/api/demo/info").json
     assert info["demo"] is False and "accounts" not in info
     assert manager.get("/api/time").json["paused"] is False          # the real clock always runs
+
+
+def test_training_copies_people_per_shift_and_trainees_choose_pumps(tmp_path):
+    """Real station with 2 people per shift -> 2 trainees per shift, each on their own pumps."""
+    real_url = "sqlite:///" + (tmp_path / "real.db").as_posix()
+
+    class RealConfig(TestConfig):
+        SQLALCHEMY_DATABASE_URI = real_url
+
+    class TrainingConfig(DemoTestConfig):
+        REAL_DATABASE_URL = real_url
+
+    real = create_app(RealConfig)
+    manager = login(real, "manager", "ChangeMe123!")
+    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Manager123x"})
+    for t in manager.get("/api/shift-types").json["shift_types"]:
+        assert manager.put(f"/api/shift-types/{t['id']}", json={"staff_needed": 2}).status_code == 200
+    with real.app_context():
+        db.session.remove()
+        db.engine.dispose()
+
+    training = create_app(TrainingConfig)
+    try:
+        accounts = training.test_client().get("/api/demo/info").json["accounts"]
+        assert [(a["username"], a["shift"], a["people"]) for a in accounts] == [
+            ("demo.morning", "Morning", 2), ("demo.morning2", "Morning", 2),
+            ("demo.night", "Night", 2), ("demo.night2", "Night", 2)]
+        assert len({a["full_name"] for a in accounts}) == 4
+
+        first, second = trainee(training, "demo.morning"), trainee(training, "demo.morning2")
+        mine = first.get("/api/staff/my-shift").json
+        assert mine["pump_choice"]["needed"] == 2 and mine["pump_choice"]["must_choose"]
+        sid = mine["shift"]["id"]
+        assert first.post(f"/api/shifts/{sid}/start").status_code == 400            # must choose pumps
+        pumps = [p["id"] for p in mine["pump_choice"]["pumps"]]
+        assert first.post(f"/api/shifts/{sid}/start", json={"pump_ids": pumps[:2]}).status_code == 200
+        theirs = second.get("/api/staff/my-shift").json
+        assert theirs["pump_choice"]["suggested"] == pumps[2:]
+        ok = second.post("/api/staff/start-shift", json={"pump_ids": pumps[2:]})
+        assert ok.status_code == 200 and [r["pump_id"] for r in ok.json["shift"]["readings"]] == pumps[2:]
+    finally:
+        with training.app_context():
+            db.session.remove()
+            db.drop_all()

@@ -13,8 +13,10 @@ from ..services import alerts, audit, cash, stock, tanks
 from ..services.clock import now_local, today_local
 from ..services.periods import current_price
 from ..services.settings import get_setting
-from ..services.shifts import NEWEST_FIRST, current_shift, earlier_than, generate_shifts, previous_shift
-from .common import (ApiError, body, date_field, decimal_field, get_or_404, optional_text, require_text)
+from ..services.shifts import (NEWEST_FIRST, current_shift, definition_by_code, earlier_than, generate_shifts,
+                               previous_shift)
+from .common import (ApiError, body, check_unchanged, date_field, decimal_field, get_or_404, join_notes,
+                     offline_note, optional_text, require_text, saved_at)
 
 bp = Blueprint("shifts", __name__, url_prefix="/api")
 
@@ -28,11 +30,80 @@ def _assignment(shift, user_id):
 
 
 def _assigned_pump_ids(shift, user):
-    """Pumps the user works on. No explicit pumps assigned = all active pumps."""
+    """Pumps the user works on (None = all pumps).
+
+    A pump belongs to one person per shift. Someone with no pumps listed works the pumps nobody
+    else has taken - all of them when working alone. If two or more people have no pumps listed,
+    they must choose pumps first (empty set), so two people never work the same pump.
+    """
     assignment = _assignment(shift, user.id)
     if assignment and assignment.pumps:
         return {p.pump_id for p in assignment.pumps}
-    return None
+    others = [a for a in shift.staff if a.user_id != user.id]
+    if not others:
+        return None
+    if any(not a.pumps for a in others):
+        return set()
+    taken = {p.pump_id for a in others for p in a.pumps}
+    return {p.id for p in Pump.query.filter_by(station_id=shift.station_id, is_active=True)} - taken
+
+
+def _staff_needed(shift):
+    d = definition_by_code(shift.station_id, shift.shift_type)
+    return d.staff_needed if d and d.staff_needed else 1
+
+
+def _taken_by_others(shift, user_id):
+    """pump_id -> name of the person who has it in this shift (people with pumps listed)."""
+    return {p.pump_id: a.user.full_name for a in shift.staff if a.user_id != user_id for p in a.pumps}
+
+
+def _set_pumps(shift, assignment, pump_ids):
+    """Give these pumps to this person. Refused if one is already someone else's in this shift."""
+    pumps = {p.id: p for p in Pump.query.filter(Pump.station_id == shift.station_id, Pump.is_active.is_(True),
+                                                 Pump.id.in_(pump_ids or [0]))}
+    if len(pumps) != len(set(pump_ids)):
+        raise ApiError("Choose pumps from this station's working pumps")
+    taken = _taken_by_others(shift, assignment.user_id)
+    clash = [f"{pumps[p].pump_name} ({taken[p]})" for p in pump_ids if p in taken]
+    if clash:
+        raise ApiError(f"Already taken by someone else on this shift: {', '.join(clash)}. Choose other pumps.", 409)
+    wanted = set(pump_ids)
+    # Keep links that stay and only add/remove the difference (re-adding the same pump would clash).
+    assignment.pumps = [link for link in assignment.pumps if link.pump_id in wanted] + [
+        ShiftStaffPump(shift_staff_id=assignment.id, pump_id=p)
+        for p in sorted(wanted - {link.pump_id for link in assignment.pumps})]
+
+
+def _pump_ids(data):
+    try:
+        return [int(p) for p in (data.get("pump_ids") or [])]
+    except (TypeError, ValueError):
+        raise ApiError("Choose pumps from the list")
+
+
+def _pump_choice(shift, me):
+    """What the staff page needs to let a person choose their pumps on a shift with several people."""
+    needed = _staff_needed(shift)
+    mine = _assignment(shift, me.id)
+    taken = _taken_by_others(shift, me.id)
+    pumps = (Pump.query.filter_by(station_id=shift.station_id, is_active=True)
+             .order_by(Pump.fuel_type_id, Pump.pump_number).all())
+    free = [p.id for p in pumps if p.id not in taken]
+    others = [a for a in shift.staff if a.user_id != me.id]
+    # me + everyone else without pumps yet (already on the shift or still expected)
+    still_coming = max(1, max(needed, len(others) + 1) - sum(1 for a in others if a.pumps))
+    share = -(-len(free) // still_coming) if free else 0
+    return {
+        "needed": needed,
+        "people": [{"name": a.user.full_name, "pumps": [p.pump_id for p in a.pumps]} for a in shift.staff],
+        "pumps": [{"id": p.id, "name": p.pump_name, "taken_by": taken.get(p.id)} for p in pumps],
+        "mine": [p.pump_id for p in mine.pumps] if mine else [],
+        "suggested": free[:share],
+        # must choose: several people work this shift and this person has no pumps of their own yet
+        "must_choose": needed > 1 and not (mine and mine.pumps),
+        "full": mine is None and len(shift.staff) >= needed,
+    }
 
 
 def _check_can_edit(shift, user, pump_id=None):
@@ -132,6 +203,7 @@ def shift_detail(shift, viewer):
         readings=readings,
         money=cash.shift_money(shift),
         online_view=cash.online_view(shift),     # night online (fixed) + this shift's online
+        staff_needed=_staff_needed(shift),
         # Tank quantities are for the manager only; staff never see or type tank stock.
         stock=stock_rows if viewer.is_manager else [],
         tanks=tanks.shift_breakdown(shift) if viewer.is_manager else [],
@@ -252,7 +324,10 @@ def my_shift():
                           "scheduled_start": cur.scheduled_start.isoformat(),
                           "scheduled_end": cur.scheduled_end.isoformat(),
                           "staff": [a.user.full_name for a in cur.staff],
-                          "can_start": active is None and not me.is_manager and cur.status in ("SCHEDULED", "OPEN")},
+                          "staff_needed": _staff_needed(cur),
+                          "can_start": active is None and not me.is_manager and cur.status in ("SCHEDULED", "OPEN")
+                                       and (_assignment(cur, me.id) is not None or len(cur.staff) < _staff_needed(cur))},
+        "pump_choice": _pump_choice(active or cur, me),
         "previous_shift": {"label": prev.label, "status": prev.status,
                            "staff": [a.user.full_name for a in prev.staff]} if prev else None,
         "my_shifts": upcoming,
@@ -280,8 +355,15 @@ def start_current_shift():
         raise ApiError(f"The {cur.label} shift has already been {cur.status.lower()}. "
                        "Ask the manager if you need to work on it.", 409)
     joined = _assignment(cur, me.id) is None
+    needed = _staff_needed(cur)
+    if joined and len(cur.staff) >= needed:
+        names = ", ".join(a.user.full_name for a in cur.staff)
+        raise ApiError(f"The {cur.label} shift already has {needed} {'person' if needed == 1 else 'people'} "
+                       f"({names}). Ask the manager if you should work too.", 409)
     if joined:
         cur.staff.append(ShiftStaff(user_id=me.id, assigned_by=me.id, source="SELF"))
+        db.session.flush()
+    _take_pumps(cur, me, _pump_ids(body()), needed)
     if cur.status == "SCHEDULED":
         cur.status, cur.started_at, cur.opened_by = "OPEN", utcnow(), me.id
         action = "STAFF OPENED SHIFT"
@@ -307,8 +389,7 @@ def assign_staff(shift_id):
     user = get_or_404(User, int(data.get("user_id") or 0), me.station_id, "Staff member")
     if not user.is_active:
         raise ApiError("That account is disabled")
-    pump_ids = [int(p) for p in data.get("pump_ids") or []]
-    valid = {p.id for p in Pump.query.filter(Pump.station_id == me.station_id, Pump.id.in_(pump_ids or [0]))}
+    pump_ids = _pump_ids(data)
     assignment = _assignment(shift, user.id)
     action = "MANAGER CHANGED ASSIGNED STAFF" if assignment else "MANAGER ASSIGNED STAFF"
     if assignment is None:
@@ -319,9 +400,12 @@ def assign_staff(shift_id):
     assignment.assigned_at = utcnow()
     assignment.assigned_by = me.id
     assignment.source = "MANUAL"  # a day-specific choice is never moved by roster changes
-    assignment.pumps = [ShiftStaffPump(shift_staff_id=assignment.id, pump_id=p) for p in pump_ids if p in valid]
+    if pump_ids:
+        _set_pumps(shift, assignment, pump_ids)
+    else:
+        assignment.pumps = []
     audit.log(me.station_id, me.id, action, "shift_staff", assignment.id,
-              new={"shift": shift.label, "user": user.username, "pump_ids": sorted(valid)})
+              new={"shift": shift.label, "user": user.username, "pump_ids": sorted(set(pump_ids))})
     db.session.commit()
     db.session.refresh(shift)
     return jsonify({"shift": shift_detail(shift, me)})
@@ -344,6 +428,43 @@ def unassign_staff(shift_id, user_id):
     return jsonify({"ok": True})
 
 
+def _take_pumps(shift, me, pump_ids, needed):
+    """Staff starting/joining: keep the pumps they chose. With several people on the shift a
+    person must have pumps of their own; working alone, no choice means all pumps."""
+    assignment = _assignment(shift, me.id)
+    if pump_ids:
+        _set_pumps(shift, assignment, pump_ids)
+        audit.log(me.station_id, me.id, "STAFF CHOSE PUMPS", "shift_staff", assignment.id,
+                  new={"shift": shift.label, "pump_ids": sorted(set(pump_ids))})
+    elif needed > 1 and not assignment.pumps:
+        raise ApiError(f"{needed} people work this shift: choose the pumps you will work on.", 400)
+
+
+@bp.put("/shifts/<int:shift_id>/my-pumps")
+@login_required
+def choose_my_pumps(shift_id):
+    """A staff member chooses (or changes) the pumps they work on in this shift."""
+    me = current_user()
+    shift = get_or_404(Shift, shift_id, me.station_id, "Shift")
+    assignment = _assignment(shift, me.id)
+    if me.is_manager or assignment is None:
+        raise ApiError("You are not on this shift", 403)
+    if shift.status not in ("SCHEDULED", "OPEN", "FLAGGED"):
+        raise ApiError("This shift can no longer be changed", 409)
+    pump_ids = _pump_ids(body())
+    if not pump_ids:
+        raise ApiError("Choose at least one pump")
+    before = sorted(p.pump_id for p in assignment.pumps)
+    _set_pumps(shift, assignment, pump_ids)
+    audit.log(me.station_id, me.id, "STAFF CHOSE PUMPS", "shift_staff", assignment.id,
+              {"pump_ids": before}, {"shift": shift.label, "pump_ids": sorted(set(pump_ids))})
+    if shift.status != "SCHEDULED":
+        _prepare_shift(shift, me.id)
+    db.session.commit()
+    db.session.refresh(shift)
+    return jsonify({"shift": shift_detail(shift, me), "pump_choice": _pump_choice(shift, me)})
+
+
 # ---------------------------------------------------------------- lifecycle
 
 @bp.post("/shifts/<int:shift_id>/start")
@@ -358,6 +479,8 @@ def start_shift(shift_id):
     now = now_local(me.station_id)
     if not me.is_manager and now < shift.scheduled_start - timedelta(hours=1):
         raise ApiError(f"This shift starts at {shift.scheduled_start:%d/%m %H:%M}. You can start it up to one hour early.")
+    if not me.is_manager:
+        _take_pumps(shift, me, _pump_ids(body()), _staff_needed(shift))
     shift.status, shift.started_at, shift.opened_by = "OPEN", utcnow(), me.id
     _prepare_shift(shift, me.id)
     audit.log(me.station_id, me.id, f"{me.role} OPENED SHIFT", "shifts", shift.id, {"status": "SCHEDULED"}, {"status": "OPEN"})
@@ -379,11 +502,18 @@ def save_reading(shift_id, pump_id):
     if me.is_manager and shift.status == "SUBMITTED" and not reason:
         raise ApiError("Please give a reason for correcting a submitted shift")
 
+    if isinstance(data.get("based_on"), dict):     # never overwrite someone else's newer reading
+        # (an opening counts once someone saved it - before that it may only be pre-filled)
+        check_unchanged({"opening_meter": reading.opening_meter if reading.opening_recorded_at else None,
+                         "closing_meter": reading.closing_meter},
+                        data["based_on"], f"{pump.pump_name} reading")
+    when = saved_at(not_before=shift.started_at)
+    note = offline_note(me.station_id, when)
     opening = decimal_field(data, "opening_meter", "Opening meter", required=False, minimum=0)
     closing = decimal_field(data, "closing_meter", "Closing meter", required=False, minimum=0)
     if opening is not None:
         reading.opening_meter = opening
-        reading.opening_recorded_at = utcnow()
+        reading.opening_recorded_at = when
         tol = D(get_setting(me.station_id, "meter_mismatch_tolerance"), ZERO)
         key = f"METER_OPEN:{shift.id}:{pump.id}"
         if reading.expected_opening_meter is not None and abs(opening - D(reading.expected_opening_meter)) > tol:
@@ -414,7 +544,7 @@ def save_reading(shift_id, pump_id):
         reading.price_per_litre = price.price_per_litre
         reading.fuel_sold = sold
         reading.revenue = revenue(sold, price.price_per_litre)
-        reading.closing_recorded_at = utcnow()
+        reading.closing_recorded_at = when
         alerts.resolve_by_key(me.station_id, f"METER_CLOSE:{shift.id}:{pump.id}", "Valid closing reading entered")
     elif reading.closing_meter is not None and opening is not None:
         # Opening changed after closing was captured: recompute.
@@ -432,7 +562,7 @@ def save_reading(shift_id, pump_id):
     old, new = audit.changed_fields(before, after)
     if new:
         action = "MANAGER CORRECTED READING" if me.is_manager else "STAFF RECORDED READING"
-        audit.log(me.station_id, me.id, action, "pump_readings", reading.id, old, new, reason=reason)
+        audit.log(me.station_id, me.id, action, "pump_readings", reading.id, old, new, reason=join_notes(reason, note))
     db.session.commit()
     return jsonify({"shift": shift_detail(shift, me)})
 
@@ -565,6 +695,10 @@ def save_online(shift_id):
     except ValueError as exc:
         raise ApiError(str(exc))
     row = ShiftCash.query.filter_by(shift_id=shift.id).first()
+    if isinstance(data.get("based_on"), dict):     # never overwrite someone else's newer figure
+        check_unchanged({"online_money": row.online_expression if row else None},
+                        {"online_money": data["based_on"].get("online_expression")}, "online money")
+    note = offline_note(me.station_id, saved_at(not_before=shift.started_at))
     before = {"online_expression": row.online_expression, "online_total": row.online_total} if row else None
     if row is None:
         row = ShiftCash(station_id=shift.station_id, shift_id=shift.id)
@@ -573,7 +707,7 @@ def save_online(shift_id):
     db.session.flush()
     audit.log(me.station_id, me.id, f"{me.role} RECORDED ONLINE MONEY", "shift_cash", row.id, before,
               {"shift": shift.label, "online_expression": expression, "online_total": total},
-              reason=optional_text(data, "reason", 500))
+              reason=join_notes(optional_text(data, "reason", 500), note))
     db.session.commit()
     return jsonify({"shift": shift_detail(shift, me)})
 

@@ -65,6 +65,7 @@ that resets or simulates must check `DEMO_MODE` (see `routes/demo.py::_require_d
 | Staff accounts, disable, reset password, activity | `routes/users.py`, `frontend/manager/staff.html` |
 | Shifts, auto daily Morning/Night, assignment, approve/flag | `services/shifts.py`, `routes/shifts.py`, `manager-shifts.js` |
 | Shift types (Morning/Afternoon/Night), presets, roster | `services/shifts.py`, `services/roster.py`, `routes/roster.py`, Shifts page |
+| People per shift + one person per pump | `shift_definitions.staff_needed` (upgrade_005), `routes/shifts.py::_assigned_pump_ids/_set_pumps/_pump_choice`, `PUT /api/shifts/<id>/my-pumps`, pump picker in `staff-shift.js`; training portal copies it and makes that many trainees per shift (`services/demo.py`) |
 | Pumps (not hard-coded), fuel types | `routes/pumps.py`, `manager-pumps.js` |
 | Pump readings, INVALID METER READING | `routes/shifts.py::save_reading`, `staff-shift.js` |
 | Refill entry + confirmation + lock | `routes/refills.py`, `staff/refill.html`, `staff-refill.js` |
@@ -84,5 +85,5 @@ that resets or simulates must check `DEMO_MODE` (see `routes/demo.py::_require_d
 | Reports + PDF/Excel | `reports/builder.py`, `reports/exporters.py`, `routes/reports.py` |
 | Audit log | `services/audit.py`, `routes/alerts.py::audit_log` |
 | API rate limit, device blocking, wrong-password waits | `services/guard.py`, `services/ratelimit.py` (memory, or DB tables `rate_counters`/`ip_blocks` when `SHARED_RATE_LIMITS`, default on Vercel), `auth/routes.py::login` |
-| Offline saves (outbox) + page copies | `App.api`/`App.flushOutbox` in `app.js` (only whole-record PUTs are queued), `frontend/sw.js` |
+| Offline saves (outbox) + page copies | `App.api`/`App.flushOutbox` in `app.js` (only whole-record PUTs are queued; each carries an `Idempotency-Key`, applied once via `processed_requests` in `app.py::apply_each_save_once`; refused saves kept in a "could not be sent" list; `X-Saved-At` = typed time in SERVER time (phone keeps its offset from `/api/time`), checked by `common.saved_at`; `based_on`/`was` values make the server refuse overwriting newer changes via `common.check_unchanged`), `frontend/sw.js`, `manifest.webmanifest` (installable; `navigator.storage.persist`) |
 | Expense sheet (Matumizi) | `App.expenseSheet` in `app.js`, `routes/expenses.py::_save_sheet` |
