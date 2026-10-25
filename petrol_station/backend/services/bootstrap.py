@@ -13,7 +13,30 @@ from ..models import FuelType, Station, User, UserStation
 DEFAULT_FUELS = (("PETROL", "Petrol", "#16a34a"), ("DIESEL", "Diesel", "#ea580c"))
 
 
+# Any fixed number: the PostgreSQL lock that makes starting copies take turns (see bootstrap).
+_BOOTSTRAP_LOCK = 724_001
+
+
 def bootstrap():
+    """Create/upgrade the tables and seed a new database.
+
+    On Vercel several copies of the app can start at the same moment. On PostgreSQL they take
+    turns here, so two copies never create the same table or the first station twice: a
+    transaction-level advisory lock is held on its own connection while the work runs, and is
+    released when that transaction ends (also safe behind a connection pooler such as Neon's).
+    Other databases run one process: no lock needed.
+    """
+    if db.engine.dialect.name != "postgresql":
+        return _bootstrap()
+    with db.engine.begin() as lock_conn:          # the lock lasts until this transaction ends
+        lock_conn.exec_driver_sql(f"SELECT pg_advisory_xact_lock({_BOOTSTRAP_LOCK})")
+        try:
+            return _bootstrap()
+        finally:
+            db.session.remove()
+
+
+def _bootstrap():
     db.create_all()
     from .migrations import run_all
     run_all()
