@@ -16,7 +16,7 @@ def open_alerts(app, alert_type):
 
 
 def setup_station(app, manager):
-    r = manager.post("/api/users", json={"full_name": "John Mushi", "username": "john01", "password": "Temp1234", "role": "STAFF"})
+    r = manager.post("/api/users", json={"full_name": "John Mushi", "username": "john01", "password": "Temp@1234", "role": "STAFF"})
     assert r.status_code == 201, r.json
     john_id = r.json["user"]["id"]
     fuels = {f["code"]: f["id"] for f in manager.get("/api/fuel-types").json["fuel_types"]}
@@ -37,7 +37,7 @@ def test_full_shift_refill_and_profit_workflow(app, manager):
     shift_id = manager.get("/api/shifts").json["current_shift_id"]
     assert manager.post(f"/api/shifts/{shift_id}/assign", json={"user_id": john_id}).status_code == 200
 
-    john = login(app, "john01", "Temp1234")
+    john = login(app, "john01", "Temp@1234")
     assert john.first_login_user["must_change_password"] is True
     # Staff cannot reach manager functions.
     assert john.get("/api/users").status_code == 403

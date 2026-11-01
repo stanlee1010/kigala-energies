@@ -15,7 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import click
-from flask import Flask, abort, jsonify, redirect, request, send_from_directory
+from flask import Flask, abort, jsonify, redirect, request, send_from_directory, session
 from flask.sessions import SecureCookieSessionInterface
 from sqlalchemy import event
 from flask.json.provider import DefaultJSONProvider
@@ -120,7 +120,7 @@ def create_app(config_class=Config):
         if request.path.startswith("/api/"):
             from .services import guard
             from .services.audit import client_ip
-            refused = guard.check_api_request(client_ip())
+            refused = guard.check_api_request(client_ip(), session.get("user_id"))
             if refused:
                 status, message, retry_after = refused
                 response = jsonify({"error": message, "retry_after": retry_after})

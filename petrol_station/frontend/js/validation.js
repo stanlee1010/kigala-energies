@@ -50,8 +50,11 @@
         else if (input.min !== "" && n < Number(input.min)) message = `${labelOf(input)} cannot be less than ${input.min}`;
         else if (input.dataset.positive !== undefined && n <= 0) message = `${labelOf(input)} must be greater than zero`;
       } else if (value && input.dataset.password !== undefined) {
+        // Same rule as the server (routes/common.py::validate_password).
+        const missing = [[/[A-Z]/, "a capital letter"], [/\d/, "a number"], [/[^A-Za-z0-9\s]/, "a special character (! @ # $ %…)"]]
+          .filter(([re]) => !re.test(value)).map(([, what]) => what);
         if (value.length < 8) message = "Password must be at least 8 characters";
-        else if (/^\d+$/.test(value) || /^[A-Za-z]+$/.test(value)) message = "Use both letters and numbers";
+        else if (missing.length) message = `Password needs ${missing.join(", ").replace(/, ([^,]*)$/, " and $1")}`;
       } else if (value && input.dataset.match) {
         const other = form.querySelector(`[name="${input.dataset.match}"]`);
         if (other && other.value !== input.value) message = "Passwords do not match";

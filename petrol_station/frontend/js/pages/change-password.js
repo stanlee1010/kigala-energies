@@ -5,8 +5,8 @@ App.run(async () => {
   if (!user.must_change_password) App.$('label[for="current_password"]').textContent = "Current password";
   const leader = ["MANAGER", "DIRECTOR"].includes(user.role);
   App.$("#new_password + .hint").textContent = leader
-    ? "At least 10 characters, with letters and numbers. Not an easy password and not your username."
-    : "At least 8 characters, with letters and numbers. Not an easy password and not your username.";
+    ? "At least 10 characters, with a capital letter, a number and a special character (! @ # $ %…). Not an easy password and not your username."
+    : "At least 8 characters, with a capital letter, a number and a special character (! @ # $ %…). Not an easy password and not your username.";
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

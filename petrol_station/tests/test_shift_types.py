@@ -21,7 +21,7 @@ def test_roster_and_three_shift_pattern(app, manager):
     assert [t["code"] for t in types.values() if t["is_active"]] == ["MORNING", "NIGHT"]
 
     # Choose John's regular shift once when creating him.
-    r = manager.post("/api/users", json={"full_name": "John", "username": "john01", "password": "Temp1234",
+    r = manager.post("/api/users", json={"full_name": "John", "username": "john01", "password": "Temp@1234",
                                          "shift_type_id": types["NIGHT"]["id"]})
     john = r.json["user"]["id"]
     manager.post("/api/shifts/generate", json={"start_date": str(day), "end_date": str(day)})
@@ -83,8 +83,8 @@ def test_shift_type_validation(app, manager):
 
 
 def test_staff_cannot_change_shift_types(app, manager):
-    manager.post("/api/users", json={"full_name": "Peter", "username": "peter02", "password": "Temp1234"})
+    manager.post("/api/users", json={"full_name": "Peter", "username": "peter02", "password": "Temp@1234"})
     from .conftest import login
-    peter = login(app, "peter02", "Temp1234")
+    peter = login(app, "peter02", "Temp@1234")
     assert peter.post("/api/shift-types", json={"name": "Afternoon", "start_time": "14:00"}).status_code == 403
     assert peter.put("/api/roster/1", json={"shift_type_id": None}).status_code == 403

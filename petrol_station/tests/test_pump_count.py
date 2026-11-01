@@ -54,6 +54,6 @@ def test_open_shift_follows_pump_changes(app, manager):
 
 
 def test_staff_cannot_change_pump_count(app, manager):
-    manager.post("/api/users", json={"full_name": "Peter", "username": "peter02", "password": "Temp1234"})
-    peter = login(app, "peter02", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Peter", "username": "peter02", "password": "Temp@1234"})
+    peter = login(app, "peter02", "Temp@1234")
     assert peter.put("/api/pumps/count/1", json={"count": 5}).status_code == 403

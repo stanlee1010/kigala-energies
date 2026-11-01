@@ -40,7 +40,7 @@ def test_capital_profit_and_calculator(app, manager):
     assert round(calc["return_on_capital_percent"], 2) == 5.36
 
     # Manager only.
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     assert asha.get("/api/capital").status_code == 403
     assert asha.post("/api/capital/calculate", json={"litres": 1, "buying_price": 1, "selling_price": 2}).status_code == 403

@@ -46,8 +46,8 @@ def test_every_api_route_requires_login(app):
 
 
 def test_roles_are_enforced_on_the_server(app, manager):
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     for method, url in (("GET", "/api/users"), ("GET", "/api/stock/current"), ("GET", "/api/capital"),
                         ("GET", "/api/audit"), ("POST", "/api/prices"), ("GET", "/api/director/overview"),
                         ("GET", "/api/money/day"), ("PUT", "/api/settings")):
@@ -59,9 +59,9 @@ def test_roles_are_enforced_on_the_server(app, manager):
 def test_records_of_another_station_cannot_be_opened_by_id(app, manager):
     director = login(app, "director", "Director123!")
     other = director.post("/api/director/stations", json={"name": "Other Station"}).json["station"]
-    director.post("/api/director/managers", json={"full_name": "Otto", "username": "otto", "password": "Temp1234",
+    director.post("/api/director/managers", json={"full_name": "Otto", "username": "otto", "password": "Temp@1234",
                                                   "station_ids": [other["id"]]})
-    otto = login(app, "otto", "Temp1234")
+    otto = login(app, "otto", "Temp@1234")
     otto_shift = otto.get("/api/shifts").json["current_shift_id"]
     otto_pump = otto.get("/api/pumps").json["pumps"][0]["id"]
     # The first station's manager guesses the other station's ids:
@@ -73,8 +73,8 @@ def test_records_of_another_station_cannot_be_opened_by_id(app, manager):
 
 def test_staff_only_see_their_own_refills_and_expenses(app, manager):
     for u in ("asha01", "baraka02"):
-        manager.post("/api/users", json={"full_name": u, "username": u, "password": "Temp1234"})
-    asha, baraka = login(app, "asha01", "Temp1234"), login(app, "baraka02", "Temp1234")
+        manager.post("/api/users", json={"full_name": u, "username": u, "password": "Temp@1234"})
+    asha, baraka = login(app, "asha01", "Temp@1234"), login(app, "baraka02", "Temp@1234")
     day = asha.get("/api/time").json["now"][:10]
     e = asha.post("/api/expenses", json={"category_name": "Water", "description": "x", "amount": 100,
                                          "expense_date": day}).json["expense"]
@@ -85,12 +85,12 @@ def test_staff_only_see_their_own_refills_and_expenses(app, manager):
 
 # 8. Block field tampering ------------------------------------------------------------------
 def test_extra_fields_cannot_change_roles_or_status(app, manager):
-    r = manager.post("/api/users", json={"full_name": "Sly", "username": "sly01", "password": "Temp1234",
+    r = manager.post("/api/users", json={"full_name": "Sly", "username": "sly01", "password": "Temp@1234",
                                          "role": "DIRECTOR", "is_active": True})
     assert r.status_code == 403
-    manager.post("/api/users", json={"full_name": "Sly", "username": "sly01", "password": "Temp1234",
+    manager.post("/api/users", json={"full_name": "Sly", "username": "sly01", "password": "Temp@1234",
                                      "must_change_password": False, "password_hash": "x", "station_id": 1})
-    sly = login(app, "sly01", "Temp1234")
+    sly = login(app, "sly01", "Temp@1234")
     me = sly.first_login_user
     assert me["role"] == "STAFF" and me["must_change_password"] is True
     day = sly.get("/api/time").json["now"][:10]
@@ -180,11 +180,11 @@ def test_every_api_route_is_rate_limited(app, manager):
 
 def test_text_is_cleaned_and_formats_checked(app, manager):
     r = manager.post("/api/users", json={"full_name": "Asha\u202e\u0000 Juma ", "username": "asha01",
-                                         "password": "Temp1234"})
+                                         "password": "Temp@1234"})
     assert r.status_code == 201 and r.json["user"]["full_name"] == "Asha Juma"
-    assert manager.post("/api/users", json={"full_name": "B", "username": "bb01", "password": "Temp1234",
+    assert manager.post("/api/users", json={"full_name": "B", "username": "bb01", "password": "Temp@1234",
                                             "email": "not-an-email"}).status_code == 400
-    assert manager.post("/api/users", json={"full_name": "B", "username": "bb01", "password": "Temp1234",
+    assert manager.post("/api/users", json={"full_name": "B", "username": "bb01", "password": "Temp@1234",
                                             "phone": "<script>"}).status_code == 400
     fuel = manager.get("/api/fuel-types").json["fuel_types"][0]
     assert manager.put(f"/api/fuel-types/{fuel['id']}", json={"name": fuel["name"],
@@ -203,7 +203,7 @@ def test_invalid_values_get_a_clear_400_not_a_crash(app, manager):
     assert manager.post("/api/prices", json={"fuel_type_id": "abc", "price_per_litre": 10}).status_code == 400
     assert manager.post("/api/prices", json={"fuel_type_id": 1, "price_per_litre": -5}).status_code == 400
     assert manager.get("/api/audit?limit=lots").status_code == 400
-    assert manager.post("/api/users", json={"full_name": "x", "username": "<script>", "password": "Temp1234"}).status_code == 400
+    assert manager.post("/api/users", json={"full_name": "x", "username": "<script>", "password": "Temp@1234"}).status_code == 400
 
 
 # 15. Escape user content (spreadsheet formulas) --------------------------------------------------------
@@ -237,8 +237,8 @@ def test_responses_do_not_leak_secrets_or_internals(app, manager):
     users = manager.get("/api/users").json["users"]
     for u in users:
         assert not {"password_hash", "failed_login_count", "locked_until"} & set(u)
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     assert all(set(t) == {"id", "name", "fuel_type_id", "fuel"} for t in asha.get("/api/tanks").json["tanks"])
     r = asha.get("/api/this-does-not-exist")
     assert r.status_code == 404 and "Traceback" not in r.get_data(as_text=True)

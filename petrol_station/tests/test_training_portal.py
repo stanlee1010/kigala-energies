@@ -76,7 +76,7 @@ def test_each_trainee_practises_their_own_shift_with_a_paused_clock(demo_app):
     assert started["stock"] == [] and started["tanks"] == []                  # staff never see tanks
     assert night.get("/api/staff/my-shift").json["shift"]["shift_type"] == "NIGHT"
 
-    r = morning.post("/api/auth/change-password", json={"current_password": "x", "new_password": "Other1234"})
+    r = morning.post("/api/auth/change-password", json={"current_password": "x", "new_password": "Other@1234"})
     assert r.status_code == 403
 
 
@@ -111,7 +111,7 @@ def test_training_copies_people_per_shift_and_trainees_choose_pumps(tmp_path):
 
     real = create_app(RealConfig)
     manager = login(real, "manager", "ChangeMe123!")
-    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9"})
+    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9!"})
     for t in manager.get("/api/shift-types").json["shift_types"]:
         assert manager.put(f"/api/shift-types/{t['id']}", json={"staff_needed": 2}).status_code == 200
     with real.app_context():

@@ -21,7 +21,7 @@ def test_shift_and_day_money(app, manager):
     fuels = {f["code"]: f["id"] for f in manager.get("/api/fuel-types").json["fuel_types"]}
     manager.post("/api/prices", json={"fuel_type_id": fuels["PETROL"], "price_per_litre": 3000})
     petrol_pump = next(p["id"] for p in manager.get("/api/pumps").json["pumps"] if p["fuel_code"] == "PETROL")
-    uid = manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"}).json["user"]["id"]
+    uid = manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"}).json["user"]["id"]
     cats = {c["name"]: c["id"] for c in manager.get("/api/expense-categories").json["categories"]}
 
     # The night shift that ENDS this morning belongs with today's day shift.
@@ -41,7 +41,7 @@ def test_shift_and_day_money(app, manager):
     for s in (morning, night, tonight):
         manager.post(f"/api/shifts/{s['id']}/start")
 
-    asha = login(app, "asha01", "Temp1234")
+    asha = login(app, "asha01", "Temp@1234")
     # Day shift: sells 400 L x 3000 = 1,200,000; online 4000+60000+5000 = 69,000; expense 20,000.
     asha.put(f"/api/shifts/{morning['id']}/readings/{petrol_pump}", json={"opening_meter": 100, "closing_meter": 500})
     r = asha.put(f"/api/shifts/{morning['id']}/online", json={"online_expression": "4000+60000+5000"})

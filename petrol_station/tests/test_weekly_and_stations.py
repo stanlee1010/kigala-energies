@@ -11,9 +11,9 @@ def _types(client):
 
 def test_staff_choose_next_weeks_shift_from_monday(app, manager):
     types = _types(manager)
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234",
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234",
                                      "shift_type_id": types["MORNING"]})          # regular shift: Morning
-    asha = login(app, "asha01", "Temp1234")
+    asha = login(app, "asha01", "Temp@1234")
     w = asha.get("/api/staff/week-choice").json
     monday = date.fromisoformat(w["next_week"]["start"])
     assert monday.weekday() == 0 and w["next_week"]["chosen"] is False
@@ -70,19 +70,19 @@ def test_director_adds_removes_and_restores_a_station(app, manager):
     assert director.post(f"/api/director/stations/{main['id']}/remove", json={}).status_code == 400  # last station
 
     second = director.post("/api/director/stations", json={"name": "Kigala Mbezi"}).json["station"]
-    director.post("/api/director/managers", json={"full_name": "Neema", "username": "neema", "password": "Temp1234",
+    director.post("/api/director/managers", json={"full_name": "Neema", "username": "neema", "password": "Temp@1234",
                                                   "station_ids": [main["id"], second["id"]]})
-    neema = login(app, "neema", "Temp1234")
+    neema = login(app, "neema", "Temp@1234")
     neema.post("/api/auth/station", json={"station_id": second["id"]})
-    neema.post("/api/users", json={"full_name": "Juma", "username": "juma01", "password": "Temp1234",
+    neema.post("/api/users", json={"full_name": "Juma", "username": "juma01", "password": "Temp@1234",
                                    "station_id": second["id"]})
-    juma = login(app, "juma01", "Temp1234")
+    juma = login(app, "juma01", "Temp@1234")
 
     r = director.post(f"/api/director/stations/{second['id']}/remove", json={"reason": "Lease ended"})
     assert r.status_code == 200 and r.json["station"]["is_active"] is False
     # Its staff are logged out and cannot log in; the manager is moved to their other station.
     assert juma.get("/api/auth/me").status_code == 401
-    blocked = app.test_client().post("/api/auth/login", json={"username": "juma01", "password": "Temp1234"})
+    blocked = app.test_client().post("/api/auth/login", json={"username": "juma01", "password": "Temp@1234"})
     assert blocked.status_code == 403 and "removed" in blocked.json["error"]
     me = neema.get("/api/auth/me").json["user"]
     assert me["station_id"] == main["id"] and [s["id"] for s in me["stations"]] == [main["id"]]
@@ -90,5 +90,5 @@ def test_director_adds_removes_and_restores_a_station(app, manager):
 
     # Restore: everything works again, nothing was lost.
     assert director.post(f"/api/director/stations/{second['id']}/restore", json={}).status_code == 200
-    login(app, "juma01", "Temp1234")
+    login(app, "juma01", "Temp@1234")
     assert len(director.get("/api/director/overview").json["locations"]) == 2

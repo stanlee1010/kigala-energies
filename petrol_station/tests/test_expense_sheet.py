@@ -5,8 +5,8 @@ from .conftest import login
 
 
 def _open_shift(app, manager):
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     return asha, asha.post("/api/staff/start-shift").json["shift"]["id"]
 
 
@@ -54,14 +54,14 @@ def test_sheet_checks_every_line(app, manager):
     assert bad.status_code == 400
     # nothing is saved when one line is wrong
     assert asha.get(f"/api/shifts/{sid}").json["shift"]["money"]["expense_items"] == []
-    manager.post("/api/users", json={"full_name": "Juma", "username": "juma01", "password": "Temp1234"})
-    juma = login(app, "juma01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Juma", "username": "juma01", "password": "Temp@1234"})
+    juma = login(app, "juma01", "Temp@1234")
     assert juma.put(f"/api/shifts/{sid}/expenses", json={"lines": []}).status_code == 403
 
 
 def test_my_records_sheet_without_a_shift_uses_today(app, manager):
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     r = asha.put("/api/staff/expenses", json={"lines": [{"name": "Room expenses", "amount": "73500"},
                                                         {"name": "Battery", "amount": "5000"}]})
     assert r.status_code == 200 and r.json["added"] == 2

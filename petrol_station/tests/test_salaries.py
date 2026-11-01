@@ -7,9 +7,9 @@ from .conftest import login
 
 
 def _staff(app, manager, username="asha01", name="Asha"):
-    uid = manager.post("/api/users", json={"full_name": name, "username": username, "password": "Temp1234"}).json["user"]["id"]
-    client = login(app, username, "Temp1234")
-    client.post("/api/auth/change-password", json={"current_password": "Temp1234", "new_password": "Asha12345x"})
+    uid = manager.post("/api/users", json={"full_name": name, "username": username, "password": "Temp@1234"}).json["user"]["id"]
+    client = login(app, username, "Temp@1234")
+    client.post("/api/auth/change-password", json={"current_password": "Temp@1234", "new_password": "Asha@12345x"})
     return uid, client
 
 

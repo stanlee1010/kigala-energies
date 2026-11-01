@@ -3,8 +3,8 @@ from .conftest import login
 
 
 def _staff(app, manager, username):
-    manager.post("/api/users", json={"full_name": username.title(), "username": username, "password": "Temp1234"})
-    return login(app, username, "Temp1234")
+    manager.post("/api/users", json={"full_name": username.title(), "username": username, "password": "Temp@1234"})
+    return login(app, username, "Temp@1234")
 
 
 def two_people_per_shift(manager):

@@ -29,8 +29,8 @@ def test_refill_into_a_tank_and_levels(app, manager):
     manager.post("/api/stock/adjustments", json={"fuel_type_id": fuels["DIESEL"], "tank_id": tank1["id"],
                                                  "adjustment_type": "OPENING_BALANCE", "quantity_litres": 5000,
                                                  "cost_per_litre": 2500, "reason": "dip"})
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     staff_tanks = asha.get("/api/tanks").json["tanks"]
     assert {t["name"] for t in staff_tanks} >= {"Diesel Tank 1", "Diesel Tank 2"}
     assert all("litres" not in t and "capacity_litres" not in t for t in staff_tanks)   # names only for staff

@@ -3,8 +3,8 @@ from .conftest import login
 
 
 def test_category_in_own_words_and_staff_edit(app, manager):
-    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp1234"})
-    asha = login(app, "asha01", "Temp1234")
+    manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    asha = login(app, "asha01", "Temp@1234")
     names = lambda: [c["name"] for c in asha.get("/api/expense-categories").json["categories"]]  # noqa: E731
     before = names()
 

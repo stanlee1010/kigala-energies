@@ -123,13 +123,20 @@ kigala123 kigala1234 kigalaenergies1 petrol123 diesel123 station123 tanzania1 da
 
 
 def validate_password(value, username=None, strong=False):
-    """strong: managers and the director (they control money and accounts) need 10+ characters."""
+    """At least 8 characters with a capital letter, a number and a special character; not a common
+    password and not containing the username. strong: managers and the director (they control money
+    and accounts) choosing their own password need 10+ characters."""
     value = value or ""
     minimum = 10 if strong else 8
     if len(value) < minimum:
         raise ApiError(f"Password must be at least {minimum} characters long")
-    if value.isdigit() or value.isalpha():
-        raise ApiError("Password must contain both letters and numbers")
+    missing = [what for what, ok in (
+        ("a capital letter", any(c.isupper() for c in value)),
+        ("a number", any(c.isdigit() for c in value)),
+        ("a special character (for example ! @ # $ %)", any(not c.isalnum() and not c.isspace() for c in value)),
+    ) if not ok]
+    if missing:
+        raise ApiError("Password needs " + (", ".join(missing[:-1]) + " and " + missing[-1] if len(missing) > 1 else missing[0]))
     lowered = value.lower()
     if lowered in COMMON_PASSWORDS or (username and username.lower() in lowered):
         raise ApiError("That password is too easy to guess. Choose another one")

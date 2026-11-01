@@ -10,8 +10,8 @@ from .conftest import login
 def _staff_on_shift(app, manager, username="asha01", pump_ids=None):
     for fuel in manager.get("/api/fuel-types").json["fuel_types"]:
         manager.post("/api/prices", json={"fuel_type_id": fuel["id"], "price_per_litre": 3000})
-    manager.post("/api/users", json={"full_name": username.title(), "username": username, "password": "Temp1234"})
-    client = login(app, username, "Temp1234")
+    manager.post("/api/users", json={"full_name": username.title(), "username": username, "password": "Temp@1234"})
+    client = login(app, username, "Temp@1234")
     shift = client.post("/api/staff/start-shift", json={"pump_ids": pump_ids or []}).json["shift"]
     return client, shift["id"], shift["readings"][0]["pump_id"]
 

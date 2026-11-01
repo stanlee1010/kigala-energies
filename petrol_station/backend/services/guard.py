@@ -68,8 +68,10 @@ def block(ip, reason, station_id=None, username=None):
     db.session.commit()
 
 
-def check_api_request(ip):
-    """Called before every /api request. Returns (status, message, retry_after) to refuse it, or None."""
+def check_api_request(ip, user_id=None):
+    """Called before every /api request. Returns (status, message, retry_after) to refuse it, or None.
+
+    Two limits: per device (ip) and per signed-in account (user_id, from the signed session cookie)."""
     left = blocked_for(ip)
     if left:
         return 403, (f"This device is blocked for {max(1, left // 60)} more minute(s) because of too many "
@@ -80,6 +82,10 @@ def check_api_request(ip):
         if ratelimit.hit(f"strike:{ip}", cfg["API_STRIKES_TO_BLOCK"], STRIKE_WINDOW):
             block(ip, "far too many requests, again and again")
         return 429, f"Too many requests from this device. Wait {wait} seconds and try again.", wait
+    if user_id:
+        wait = ratelimit.hit(f"apiuser:{user_id}", cfg["API_USER_RATE_LIMIT"], 60)
+        if wait:
+            return 429, f"Too many requests from this account. Wait {wait} seconds and try again.", wait
     return None
 
 

@@ -8,8 +8,8 @@ def _setup(app, manager, people=2, staff=("asha01", "juma01", "neema01")):
     pumps = [p["id"] for p in manager.get("/api/pumps").json["pumps"] if p["is_active"]]
     clients = []
     for u in staff:
-        manager.post("/api/users", json={"full_name": u[:-2].title(), "username": u, "password": "Temp1234"})
-        clients.append(login(app, u, "Temp1234"))
+        manager.post("/api/users", json={"full_name": u[:-2].title(), "username": u, "password": "Temp@1234"})
+        clients.append(login(app, u, "Temp@1234"))
     return pumps, clients
 
 

@@ -19,10 +19,10 @@ def test_director_adds_station_and_manager_with_two_stations(app, manager):
     main_id = next(s["id"] for s in d.get("/api/director/stations").json["stations"] if s["id"] != mbezi["id"])
 
     # Director adds a manager who runs both stations.
-    r = d.post("/api/director/managers", json={"full_name": "Neema", "username": "neema", "password": "Temp1234",
+    r = d.post("/api/director/managers", json={"full_name": "Neema", "username": "neema", "password": "Temp@1234",
                                                "station_ids": [main_id, mbezi["id"]]})
     assert r.status_code == 201 and sorted(r.json["manager"]["station_ids"]) == sorted([main_id, mbezi["id"]])
-    neema = login(app, "neema", "Temp1234")
+    neema = login(app, "neema", "Temp@1234")
     assert len(neema.get("/api/auth/me").json["user"]["stations"]) == 2
 
     # The manager switches station; the set-up and data of each station stay separate.
@@ -33,7 +33,7 @@ def test_director_adds_station_and_manager_with_two_stations(app, manager):
     assert {t["name"] for t in neema.get("/api/tanks").json["tanks"]} == {"Diesel Tank 1", "Petrol Tank 1"}
 
     # Workers are created at a chosen location.
-    r = neema.post("/api/users", json={"full_name": "Juma", "username": "juma01", "password": "Temp1234",
+    r = neema.post("/api/users", json={"full_name": "Juma", "username": "juma01", "password": "Temp@1234",
                                        "station_id": mbezi["id"]})
     assert r.status_code == 201 and r.json["user"]["station_id"] == mbezi["id"]
     listing = neema.get("/api/users").json
@@ -41,9 +41,9 @@ def test_director_adds_station_and_manager_with_two_stations(app, manager):
     assert juma["station_name"] == "Kigala Mbezi"
 
     # Managers cannot create managers or reach a station they do not run.
-    assert neema.post("/api/users", json={"full_name": "X", "username": "xmgr", "password": "Temp1234",
+    assert neema.post("/api/users", json={"full_name": "X", "username": "xmgr", "password": "Temp@1234",
                                           "role": "MANAGER"}).status_code == 403
-    assert manager.post("/api/users", json={"full_name": "Y", "username": "yy01", "password": "Temp1234",
+    assert manager.post("/api/users", json={"full_name": "Y", "username": "yy01", "password": "Temp@1234",
                                             "station_id": mbezi["id"]}).status_code == 403
     assert manager.post("/api/auth/station", json={"station_id": mbezi["id"]}).status_code == 403
 
@@ -54,7 +54,7 @@ def test_director_adds_station_and_manager_with_two_stations(app, manager):
     # Director removes the manager: they can no longer log in.
     manager_id = r_id = next(m["id"] for m in d.get("/api/director/managers").json["managers"] if m["username"] == "neema")
     assert d.post(f"/api/director/managers/{r_id}/disable").status_code == 200
-    blocked = app.test_client().post("/api/auth/login", json={"username": "neema", "password": "Temp1234"})
+    blocked = app.test_client().post("/api/auth/login", json={"username": "neema", "password": "Temp@1234"})
     assert blocked.status_code == 403
     assert manager_id
 

@@ -15,7 +15,7 @@ def _device(app, ip):
     return client
 
 
-def _new_staff(manager, username="asha01", password="Temp1234"):
+def _new_staff(manager, username="asha01", password="Temp@1234"):
     return manager.post("/api/users", json={"full_name": "Asha", "username": username, "password": password}).json["user"]["id"]
 
 
@@ -28,21 +28,21 @@ def test_only_a_harmless_public_folder_is_published_as_files():
 # F-02 · a temporary password only allows changing it ---------------------------------------------
 def test_temporary_password_only_allows_changing_it(app, manager):
     _new_staff(manager)
-    asha = login(app, "asha01", "Temp1234", first_login=True)
+    asha = login(app, "asha01", "Temp@1234", first_login=True)
     r = asha.get("/api/staff/my-shift")
     assert r.status_code == 403 and r.json["must_change_password"] is True
     assert asha.get("/api/staff/my-salary").status_code == 403
     assert asha.get("/api/auth/me").status_code == 200 and asha.get("/api/time").status_code == 200
     assert asha.post("/api/auth/change-password",
-                     json={"current_password": "Temp1234", "new_password": "Kazi2026salama"}).status_code == 200
+                     json={"current_password": "Temp@1234", "new_password": "Kazi@2026salama"}).status_code == 200
     assert asha.get("/api/staff/my-shift").status_code == 200
 
 
 def test_a_reset_password_is_temporary_again(app, manager):
     uid = _new_staff(manager)
-    asha = login(app, "asha01", "Temp1234")
-    manager.post(f"/api/users/{uid}/reset-password", json={"password": "Reset2026a"})
-    again = login(app, "asha01", "Reset2026a", first_login=True)
+    asha = login(app, "asha01", "Temp@1234")
+    manager.post(f"/api/users/{uid}/reset-password", json={"password": "Reset@2026a"})
+    again = login(app, "asha01", "Reset@2026a", first_login=True)
     assert again.get("/api/staff/my-shift").status_code == 403
     assert asha.get("/api/staff/my-shift").status_code == 401      # the old session ended with the reset
 
@@ -50,19 +50,19 @@ def test_a_reset_password_is_temporary_again(app, manager):
 # F-03 · no resetting one's own password without the current one ---------------------------------
 def test_manager_cannot_reset_own_password_but_can_reset_staff(app, manager):
     me = manager.get("/api/auth/me").json["user"]["id"]
-    r = manager.post(f"/api/users/{me}/reset-password", json={"password": "Hijack2026x"})
+    r = manager.post(f"/api/users/{me}/reset-password", json={"password": "Hijack@2026x"})
     assert r.status_code == 403 and "Change password" in r.json["error"]
     assert browser_client(app).post("/api/auth/login",
-                                    json={"username": "manager", "password": "Hijack2026x"}).status_code == 401
+                                    json={"username": "manager", "password": "Hijack@2026x"}).status_code == 401
     uid = _new_staff(manager)
-    assert manager.post(f"/api/users/{uid}/reset-password", json={"password": "Reset2026a"}).status_code == 200
+    assert manager.post(f"/api/users/{uid}/reset-password", json={"password": "Reset@2026a"}).status_code == 200
 
 
 # F-05 · logging out ends the session on the server (copies of the cookie stop working) -----------
 def test_logout_ends_the_session_even_for_a_copied_cookie(app, manager):
     _new_staff(manager)
-    phone = login(app, "asha01", "Temp1234")
-    other_device = login(app, "asha01", "Temp1234")
+    phone = login(app, "asha01", "Temp@1234")
+    other_device = login(app, "asha01", "Temp@1234")
     copied = browser_client(app)
     copied.set_cookie("session", phone.get_cookie("session").value)
     assert copied.get("/api/staff/my-salary").status_code == 200
@@ -99,9 +99,9 @@ def test_guessing_from_one_device_does_not_lock_the_owner_out(app, manager):
     attacker = _device(app, "10.9.9.9")
     for _ in range(5):
         attacker.post("/api/auth/login", json={"username": "asha01", "password": "guess123"})
-    assert attacker.post("/api/auth/login", json={"username": "asha01", "password": "Temp1234"}).status_code == 429
+    assert attacker.post("/api/auth/login", json={"username": "asha01", "password": "Temp@1234"}).status_code == 429
     owner = _device(app, "10.0.0.7")
-    assert owner.post("/api/auth/login", json={"username": "asha01", "password": "Temp1234"}).status_code == 200
+    assert owner.post("/api/auth/login", json={"username": "asha01", "password": "Temp@1234"}).status_code == 200
 
 
 def test_guessing_spread_over_many_devices_locks_the_account_for_a_while(app, manager):
@@ -113,13 +113,13 @@ def test_guessing_spread_over_many_devices_locks_the_account_for_a_while(app, ma
                     for _ in range(3)]
     assert sum(1 for a in answers if a.get("retry_after") == 15 * 60) == 1   # the 20th guess locks the account
     owner = _device(app, "10.0.0.8")
-    r = owner.post("/api/auth/login", json={"username": "asha01", "password": "Temp1234"})
+    r = owner.post("/api/auth/login", json={"username": "asha01", "password": "Temp@1234"})
     assert r.status_code == 429                                        # locked everywhere for 15 minutes
     from backend.models import LoginFailure
     with app.app_context():
         LoginFailure.query.update({"locked_until": None})
         db.session.commit()
-    assert owner.post("/api/auth/login", json={"username": "asha01", "password": "Temp1234"}).status_code == 200
+    assert owner.post("/api/auth/login", json={"username": "asha01", "password": "Temp@1234"}).status_code == 200
 
 
 def test_a_password_reset_clears_earlier_wrong_guesses(app, manager):
@@ -127,8 +127,8 @@ def test_a_password_reset_clears_earlier_wrong_guesses(app, manager):
     device = _device(app, "10.2.0.1")
     for _ in range(5):
         device.post("/api/auth/login", json={"username": "asha01", "password": "guess123"})
-    manager.post(f"/api/users/{uid}/reset-password", json={"password": "Reset2026a"})
-    assert device.post("/api/auth/login", json={"username": "asha01", "password": "Reset2026a"}).status_code == 200
+    manager.post(f"/api/users/{uid}/reset-password", json={"password": "Reset@2026a"})
+    assert device.post("/api/auth/login", json={"username": "asha01", "password": "Reset@2026a"}).status_code == 200
 
 
 # F-12 · scripts only from this site and the one chart file -------------------------------------------
@@ -148,7 +148,7 @@ def test_easy_passwords_are_refused(app, manager):
     r = manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Manager2026x"})
     assert r.status_code == 400                                              # contains the username
     assert manager.post("/api/auth/change-password",
-                        json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9"}).status_code == 200
+                        json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9!"}).status_code == 200
 
 
 # F-14 · salary figures are never kept as offline copies on the phone ----------------------------------
@@ -208,15 +208,15 @@ def test_two_step_ticket_cannot_be_forged_or_outlive_a_password_change(app, mana
     device = _device(app, "10.4.0.1")
     ticket = device.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"}).json["ticket"]
     assert device.post("/api/auth/login/code", json={"ticket": ticket + "x", "code": _code(secret)}).status_code == 401
-    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9"})
+    manager.post("/api/auth/change-password", json={"current_password": "ChangeMe123!", "new_password": "Kituo4Mafuta9!"})
     r = device.post("/api/auth/login/code", json={"ticket": ticket, "code": _code(secret)})
     assert r.status_code == 401 and "again" in r.json["error"]
 
 
 def test_staff_cannot_use_two_step_and_turning_it_off_needs_password_and_code(app, manager):
     _new_staff(manager)
-    asha = login(app, "asha01", "Temp1234")
-    assert asha.post("/api/auth/two-step/setup", json={"password": "Temp1234"}).status_code == 403
+    asha = login(app, "asha01", "Temp@1234")
+    assert asha.post("/api/auth/two-step/setup", json={"password": "Temp@1234"}).status_code == 403
     secret = _turn_on(manager)
     assert manager.post("/api/auth/two-step/off", json={"password": "ChangeMe123!", "code": "000001"}).status_code == 400
     assert manager.post("/api/auth/two-step/off", json={"password": "wrong", "code": _code(secret, 1)}).status_code == 400
@@ -233,3 +233,27 @@ def test_director_resets_a_managers_two_step_after_a_lost_phone(app, manager):
     assert listed[mid]["two_step"] is True
     assert director.post(f"/api/director/managers/{mid}/reset-two-step").json["manager"]["two_step"] is False
     assert manager.post(f"/api/director/managers/{mid}/reset-two-step").status_code == 403    # managers cannot
+
+
+# Rate limit per signed-in account (on top of the per-device limit) -----------------------------------
+def test_one_account_is_rate_limited_across_all_its_devices(app, manager):
+    _new_staff(manager)
+    phone, tablet = login(app, "asha01", "Temp@1234"), login(app, "asha01", "Temp@1234")
+    phone.environ_base["REMOTE_ADDR"], tablet.environ_base["REMOTE_ADDR"] = "10.6.0.1", "10.6.0.2"
+    app.config["API_USER_RATE_LIMIT"] = 4
+    answers = [c.get("/api/staff/my-salary") for c in (phone, tablet, phone, tablet, phone)]
+    assert [a.status_code for a in answers] == [200, 200, 200, 200, 429]
+    assert "this account" in answers[-1].json["error"] and answers[-1].json["retry_after"] > 0
+    assert tablet.get("/api/staff/my-salary").status_code == 429            # every device of that account waits
+    assert manager.get("/api/salaries").status_code == 200                  # other accounts are not affected
+
+
+# Password rule: 8+ characters with a capital letter, a number and a special character ------------------
+def test_passwords_need_a_capital_a_number_and_a_special_character(app, manager):
+    cases = {"temp@1234": "a capital letter", "Temp@abcd": "a number", "Temp12345": "a special character",
+             "abcdefgh": "a capital letter, a number and a special character", "Te@1": "at least 8 characters"}
+    for password, expected in cases.items():
+        r = manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": password})
+        assert r.status_code == 400 and expected in r.json["error"], (password, r.json)
+    ok = manager.post("/api/users", json={"full_name": "Asha", "username": "asha01", "password": "Temp@1234"})
+    assert ok.status_code == 201

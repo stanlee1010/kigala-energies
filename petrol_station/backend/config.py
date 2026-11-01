@@ -84,6 +84,9 @@ class Config:
     LOGIN_RATE_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_WINDOW", "600"))  # ... per 10 minutes
     # Every API route: requests per minute per device (a busy page makes about 5).
     API_RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "300"))
+    # Requests per minute for one signed-in account, from any devices together (a stolen session or a
+    # script on someone's account cannot hammer the API by spreading over many devices).
+    API_USER_RATE_LIMIT = int(os.environ.get("API_USER_RATE_LIMIT", "180"))
     # A device that goes over the limit this many times in 10 minutes, or gets this many
     # passwords wrong in 10 minutes (any accounts), is blocked for IP_BLOCK_MINUTES.
     API_STRIKES_TO_BLOCK = int(os.environ.get("API_STRIKES_TO_BLOCK", "5"))
@@ -126,6 +129,7 @@ class TestConfig(Config):
     SCHEDULER_ENABLED = False
     SECRET_KEY = "test"
     API_RATE_LIMIT = 100000   # tests that check the limit set their own
+    API_USER_RATE_LIMIT = 100000
 
 
 class DemoTestConfig(TestConfig):
