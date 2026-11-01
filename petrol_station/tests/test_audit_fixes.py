@@ -195,12 +195,13 @@ def test_two_step_login_asks_for_the_app_code_after_the_password(app, manager):
     with app.app_context():
         LoginFailure.query.update({"locked_until": None})
         db.session.commit()
-    ok = device.post("/api/auth/login/code", json={"ticket": step_one["ticket"], "code": _code(secret, 1)})
+    used = _code(secret, 1)
+    ok = device.post("/api/auth/login/code", json={"ticket": step_one["ticket"], "code": used})
     assert ok.status_code == 200 and ok.json["user"]["two_step"] is True
     assert device.get("/api/auth/me").status_code == 200
     again = _device(app, "10.3.0.2")                                           # the same code never works twice
     ticket = again.post("/api/auth/login", json={"username": "manager", "password": "ChangeMe123!"}).json["ticket"]
-    assert again.post("/api/auth/login/code", json={"ticket": ticket, "code": _code(secret, 1)}).status_code == 401
+    assert again.post("/api/auth/login/code", json={"ticket": ticket, "code": used}).status_code == 401
 
 
 def test_two_step_ticket_cannot_be_forged_or_outlive_a_password_change(app, manager):

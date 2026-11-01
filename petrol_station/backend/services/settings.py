@@ -26,10 +26,14 @@ DEFAULTS = {
     "training_clock": "",
     # Training portal only: fingerprint of the real station set-up it was copied from.
     "training_fingerprint": "",
+    # The manager's choice of which warnings are urgent: JSON {alert_type: true/false}; types not
+    # listed keep their usual urgency (services/alerts.py::WARNING_KINDS). Changed via /api/alerts/urgency.
+    "urgent_warnings": "",
 }
 
 EDITABLE_KEYS = tuple(k for k in DEFAULTS
-                      if k not in ("morning_start", "night_start", "training_clock", "training_fingerprint"))
+                      if k not in ("morning_start", "night_start", "training_clock", "training_fingerprint",
+                                   "urgent_warnings"))
 
 
 def _cache():
@@ -84,6 +88,10 @@ def _validate(key, value):
             datetime.strptime(value, "%H:%M")
         except ValueError:
             raise ValueError(f"{key} must be in HH:MM format")
+    elif key == "urgent_warnings" and value:
+        import json
+        if not isinstance(json.loads(value), dict):
+            raise ValueError("urgent_warnings must be a JSON object")
     elif key == "go_live_date" and value:
         datetime.strptime(value, "%Y-%m-%d")
     elif key == "training_clock" and value:

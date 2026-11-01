@@ -49,5 +49,34 @@ App.run(async () => {
       });
     });
   }
+
+  /* Which warnings are urgent: urgent ones are listed first, in red, and turn the menu counter red. */
+  async function loadUrgency() {
+    const { kinds } = await App.get("/api/alerts/urgency");
+    const card = App.h(`<form class="card stack" id="urgency-form" novalidate>
+      <h2>Which warnings are urgent</h2>
+      <p class="small muted">Urgent warnings are shown first and in red, and the ⚠️ Warnings counter in the menu turns red while one
+        is open. The others still appear, in amber. Changing a choice also changes warnings that are already open.</p>
+      <div class="urgency-list">${kinds.map((k) => `
+        <label class="urgency-item">
+          <span><strong>${App.esc(k.name)}</strong><span class="small muted">${App.esc(k.about)}</span></span>
+          ${k.always ? '<span class="badge badge--CRITICAL">Always urgent</span>'
+            : `<span class="urgency-switch"><input type="checkbox" name="${App.esc(k.type)}" ${k.urgent ? "checked" : ""}> Urgent</span>`}
+        </label>`).join("")}</div>
+      <div><button class="btn btn--primary" type="submit">Save urgent warnings</button></div></form>`);
+    page.appendChild(card);
+    card.addEventListener("submit", (e) => {
+      e.preventDefault();
+      App.run(async () => {
+        const urgent = {};
+        App.$$('input[type="checkbox"]', card).forEach((c) => { urgent[c.name] = c.checked; });
+        await App.put("/api/alerts/urgency", { urgent });
+        App.toast("Urgent warnings saved.", "ok");
+        App.refreshAlertCount();
+      });
+    });
+  }
+
   await load();
+  await loadUrgency();
 });

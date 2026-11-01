@@ -409,3 +409,12 @@ body:has(#offline-bar) { padding-bottom: 6rem; }   /* the bar must never cover t
   .shell.is-ready .content { animation: none; }
   .shell:not(.is-ready) .topbar::after { animation: none; width: 100%; opacity: .5; }
 }
+
+/* Warnings: not-urgent ones keep the counter amber; the manager's urgency choices in Settings. */
+.nav__count--calm { background: var(--accent); color: #1f2937; }
+.urgency-list { display: grid; gap: .5rem; }
+.urgency-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .65rem .8rem;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.urgency-item > span:first-child { display: flex; flex-direction: column; gap: .15rem; }
+.urgency-switch { display: flex; align-items: center; gap: .4rem; white-space: nowrap; font-weight: 600; cursor: pointer; }
+.urgency-switch input { width: 1.25rem; height: 1.25rem; }

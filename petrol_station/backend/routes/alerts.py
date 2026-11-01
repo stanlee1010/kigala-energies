@@ -32,6 +32,45 @@ def list_alerts():
                     "open_counts": counts})
 
 
+@bp.get("/alerts/urgency")
+@manager_required
+def get_urgency():
+    """Which kinds of warning are urgent at this station (Settings page)."""
+    me = current_user()
+    chosen = alerts.urgent_choices(me.station_id)
+    return jsonify({"kinds": [{"type": kind, "name": name, "about": about, "usual": usual,
+                               "urgent": chosen[kind], "always": kind in alerts.ALWAYS_URGENT}
+                              for kind, name, about, usual in alerts.WARNING_KINDS]})
+
+
+@bp.put("/alerts/urgency")
+@manager_required
+def set_urgency():
+    """Save which warnings are urgent; warnings already open change too."""
+    import json
+    from ..services.settings import set_setting
+    me = current_user()
+    wanted = body().get("urgent")
+    if not isinstance(wanted, dict):
+        raise ApiError("Send the choices as {warning type: true/false}")
+    known = {kind for kind, *_ in alerts.WARNING_KINDS}
+    unknown = sorted(set(wanted) - known)
+    if unknown:
+        raise ApiError(f"Unknown warning type: {', '.join(unknown)}")
+    before = alerts.urgent_choices(me.station_id)
+    after = {kind: kind in alerts.ALWAYS_URGENT or bool(wanted.get(kind, before[kind])) for kind in before}
+    set_setting(me.station_id, "urgent_warnings", json.dumps(after, sort_keys=True), me.id)
+    changed = {kind: after[kind] for kind in after if after[kind] != before[kind]}
+    for kind, urgent in changed.items():
+        Alert.query.filter_by(station_id=me.station_id, alert_type=kind, is_resolved=False).update(
+            {"severity": "CRITICAL" if urgent else "WARNING"}, synchronize_session=False)
+    if changed:
+        audit.log(me.station_id, me.id, "WARNING URGENCY CHANGED", "system_settings", None,
+                  {k: before[k] for k in changed}, changed)
+    db.session.commit()
+    return get_urgency()
+
+
 @bp.post("/alerts/<int:alert_id>/resolve")
 @manager_required
 def resolve_alert(alert_id):

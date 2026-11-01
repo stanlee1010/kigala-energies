@@ -23,7 +23,7 @@ App.run(async () => {
         <div class="alert-item__body">
           <div class="alert-item__title">⚠️ ${App.esc(a.title)}</div>
           <div class="alert-item__msg">${App.esc(a.message)}</div>
-          <div class="alert-item__meta">${App.badge(a.severity)} ${App.label(a.alert_type)} · ${App.datetime(a.created_at)}
+          <div class="alert-item__meta">${App.urgencyBadge(a.severity)} ${App.label(a.alert_type)} · ${App.datetime(a.created_at)}
             ${a.is_resolved ? ` · Resolved ${App.datetime(a.resolved_at)} by ${App.esc(a.resolved_by_name || "system")}: ${App.esc(a.resolution_note || "")}` : ""}</div>
           <div class="row" style="margin-top:.4rem">
             ${link && !(link.endsWith("=")) ? `<a class="btn btn--sm" href="${link}">Go to issue</a>` : ""}

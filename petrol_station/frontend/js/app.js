@@ -253,6 +253,8 @@
   };
   // Codes like OPEN or NIGHT_SHIFT -> "Night shift". Characters that could form HTML are dropped.
   App.label = (s) => String(s || "").replace(/[<>&"'`]/g, "").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+  /** A warning's urgency in words (CRITICAL = urgent). */
+  App.urgencyBadge = (severity) => App.badge(severity, severity === "CRITICAL" ? "Urgent" : "Not urgent");
   App.badge = (status, text) => `<span class="badge badge--${App.esc(status)}">${App.esc(text || App.label(status))}</span>`;
   App.fuelDot = (color) => `<span class="fuel-dot" style="background:${App.esc(color || "#64748b")}"></span>`;
   App.signed = (v, fmt = App.num) => (Number(v) > 0 ? "+" : "") + fmt(v);
@@ -574,9 +576,9 @@
 
   /** A menu counter as last seen on this tab (updated from the server right after). */
   function counterHtml(name) {
-    let last = 0;
-    try { last = Number(sessionStorage.getItem(`kigala.${name}`) || 0); } catch (e) { /* ignore */ }
-    return `<span class="nav__count ${last ? "" : "hidden"}" data-counter="${App.esc(name)}">${last || ""}</span>`;
+    let last = { n: 0, urgent: true };
+    try { last = Object.assign(last, JSON.parse(sessionStorage.getItem(`kigala.${name}`) || "{}")); } catch (e) { /* ignore */ }
+    return `<span class="nav__count ${last.n ? "" : "hidden"} ${last.urgent ? "" : "nav__count--calm"}" data-counter="${App.esc(name)}">${last.n || ""}</span>`;
   }
 
   function renderShell(title) {
@@ -786,9 +788,14 @@
     if (!App.user || App.user.role !== "MANAGER") return;
     try {
       const res = await App.get("/api/alerts?resolved=0");
+      const urgent = res.alerts.some((a) => a.severity === "CRITICAL");
       const el = App.$('[data-counter="alerts"]');
-      if (el) { el.textContent = res.alerts.length; el.classList.toggle("hidden", !res.alerts.length); }
-      try { sessionStorage.setItem("kigala.alerts", String(res.alerts.length)); } catch (e) { /* ignore */ }
+      if (el) {
+        el.textContent = res.alerts.length;
+        el.classList.toggle("hidden", !res.alerts.length);
+        el.classList.toggle("nav__count--calm", !urgent);     // red only while an urgent warning is open
+      }
+      try { sessionStorage.setItem("kigala.alerts", JSON.stringify({ n: res.alerts.length, urgent })); } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
   };
 

@@ -111,7 +111,7 @@ App.run(async () => {
         <div class="alert-item__icon">${App.alertIcon(a.alert_type)}</div>
         <div class="alert-item__body"><div class="alert-item__title">${App.esc(a.title)}</div>
           <div class="alert-item__msg">${App.esc(a.message)}</div>
-          <div class="alert-item__meta">${App.label(a.alert_type)} · ${App.datetime(a.created_at)}</div></div>
+          <div class="alert-item__meta">${App.urgencyBadge(a.severity)} ${App.label(a.alert_type)} · ${App.datetime(a.created_at)}</div></div>
       </div>`).join("") + (d.alert_count > 8 ? `<p class="muted small">+ ${d.alert_count - 8} more</p>` : "");
   }
 
