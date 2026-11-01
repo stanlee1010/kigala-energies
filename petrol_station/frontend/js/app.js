@@ -572,6 +572,13 @@
     : user.role === "DIRECTOR" ? "/director/index.html"
     : user.role === "MANAGER" ? "/dashboard.html" : "/staff/index.html");
 
+  /** A menu counter as last seen on this tab (updated from the server right after). */
+  function counterHtml(name) {
+    let last = 0;
+    try { last = Number(sessionStorage.getItem(`kigala.${name}`) || 0); } catch (e) { /* ignore */ }
+    return `<span class="nav__count ${last ? "" : "hidden"}" data-counter="${App.esc(name)}">${last || ""}</span>`;
+  }
+
   function renderShell(title) {
     const shell = App.$("#shell");
     const main = App.$(".main", shell);
@@ -585,7 +592,7 @@
     const isHere = (href) => path + location.search === href || (path === href && !location.search);
     const nav = items.map(([href, icon, label, counter]) => `
       <li><a href="${href}" class="${isHere(href) ? "active" : ""}" ${isHere(href) ? 'aria-current="page"' : ""}>
-        <span class="nav__icon" aria-hidden="true">${icon}</span>${label}${counter ? `<span class="nav__count hidden" data-counter="${counter}"></span>` : ""}
+        <span class="nav__icon" aria-hidden="true">${icon}</span>${label}${counter ? counterHtml(counter) : ""}
       </a></li>`).join("");
     // Breadcrumbs: Home › this page (the first menu item is each role's home).
     const [homeHref, , homeLabel] = items[0] || [App.home(App.user), "", "Home"];
@@ -781,6 +788,7 @@
       const res = await App.get("/api/alerts?resolved=0");
       const el = App.$('[data-counter="alerts"]');
       if (el) { el.textContent = res.alerts.length; el.classList.toggle("hidden", !res.alerts.length); }
+      try { sessionStorage.setItem("kigala.alerts", String(res.alerts.length)); } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
   };
 
@@ -929,16 +937,29 @@
     try { sessionStorage.setItem(BOOT, JSON.stringify({ me, s, at: Date.now() })); } catch (e) { /* ignore */ }
   }
   /** Forget it when the person or station changes (log in, log out, switch station). */
-  App.forgetBoot = () => { try { sessionStorage.removeItem(BOOT); } catch (e) { /* ignore */ } };
+  App.forgetBoot = () => { try { sessionStorage.removeItem(BOOT); sessionStorage.removeItem("kigala.alerts"); } catch (e) { /* ignore */ } };
   // Only what the page is drawn from (not times like "last login", which change on their own).
   const bootKey = (me, s) => JSON.stringify([
     ["id", "role", "full_name", "username", "station_id", "must_change_password", "is_active", "stations"].map((k) => me.user[k]),
     s.station && [s.station.id, s.station.name], s.settings, !!s.demo]);
 
   /** Wrap async page code so failures are shown instead of silently breaking. */
-  App.run = (fn) => fn().catch((err) => {
-    if (err && err.message === "Please log in") return;
-    console.error(err);
-    App.error(err);
-  });
+  /* No flicker: a page's own content is drawn piece by piece while its data arrives, so it stays
+     hidden (a thin loading bar shows instead) and appears in one go once the page's first App.run -
+     its main code - has finished. It is never left hidden for long, whatever happens. */
+  let pageStarted = false;
+  App.ready = () => { const shell = document.getElementById("shell"); if (shell) shell.classList.add("is-ready"); };
+  setTimeout(App.ready, 6000);
+
+  App.run = (fn) => {
+    const first = !pageStarted;
+    pageStarted = true;
+    const run = fn().catch((err) => {
+      if (err && err.message === "Please log in") return;
+      console.error(err);
+      App.error(err);
+    });
+    if (first) run.finally(App.ready);
+    return run;
+  };
 })();

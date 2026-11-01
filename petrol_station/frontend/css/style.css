@@ -394,3 +394,18 @@ body:has(#offline-bar) { padding-bottom: 6rem; }   /* the bar must never cover t
 /* Salaries: the salary is typed straight into the table. */
 .salary-input { max-width: 170px; margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--brand); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* No flicker: a page's content appears in one go once its first data has loaded (App.run in app.js);
+   until then a thin bar under the header shows it is loading. */
+.shell:not(.is-ready) .content { visibility: hidden; }
+.shell.is-ready .content { animation: content-in .14s ease-out; }
+@keyframes content-in { from { opacity: 0; } to { opacity: 1; } }
+.shell:not(.is-ready) .topbar::after {
+  content: ""; position: absolute; left: 0; bottom: -1px; height: 3px; width: 35%;
+  background: var(--brand); border-radius: 3px; animation: page-loading 1s ease-in-out infinite;
+}
+@keyframes page-loading { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) {
+  .shell.is-ready .content { animation: none; }
+  .shell:not(.is-ready) .topbar::after { animation: none; width: 100%; opacity: .5; }
+}
